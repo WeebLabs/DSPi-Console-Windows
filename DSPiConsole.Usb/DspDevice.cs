@@ -369,30 +369,71 @@ public partial class DspDevice : ObservableObject, IDisposable
 
     #region High-Level Commands
 
+    // EQ parameter indices for wValue encoding
+    private const int EqParamType = 0;
+    private const int EqParamFreq = 1;
+    private const int EqParamQ = 2;
+    private const int EqParamGain = 3;
+
+    /// <summary>
+    /// Encode wValue for EQ parameter access: (channel &lt;&lt; 8) | (band &lt;&lt; 4) | param
+    /// </summary>
+    private static ushort EncodeEqValue(int channel, int band, int param = 0)
+    {
+        return (ushort)((channel << 8) | (band << 4) | param);
+    }
+
     /// <summary>
     /// Set EQ filter parameters for a specific channel and band.
-    /// Channel and band are encoded in wValue: (channel &lt;&lt; 8) | band
+    /// Sends 16-byte packet: channel(1), band(1), type(1), reserved(1), freq(4), Q(4), gain(4)
     /// </summary>
     public bool SetFilter(int channel, int band, FilterParams p)
     {
-        var eqPacket = EqParamPacket.FromFilterParams(p);
-        ushort value = (ushort)((channel << 8) | band);
-        return ControlTransferOut(VendorCommands.SetEqParam, value, eqPacket.ToBytes());
+        var data = new byte[16];
+        data[0] = (byte)channel;
+        data[1] = (byte)band;
+        data[2] = (byte)p.Type;
+        data[3] = 0; // reserved
+        BitConverter.GetBytes(p.Frequency).CopyTo(data, 4);
+        BitConverter.GetBytes(p.Q).CopyTo(data, 8);
+        BitConverter.GetBytes(p.Gain).CopyTo(data, 12);
+
+        return ControlTransferOut(VendorCommands.SetEqParam, 0, data);
     }
 
     /// <summary>
     /// Get EQ filter parameters for a specific channel and band.
+    /// Reads each parameter individually (4 bytes each) like the Python script.
     /// </summary>
     public FilterParams? GetFilter(int channel, int band)
     {
-        ushort value = (ushort)((channel << 8) | band);
-        var response = ControlTransferIn(VendorCommands.GetEqParam, value, EqParamPacket.Size);
+        // Read type (returned as uint32)
+        var typeData = ControlTransferIn(VendorCommands.GetEqParam, EncodeEqValue(channel, band, EqParamType), 4);
+        if (typeData == null || typeData.Length < 4) return null;
+        var type = BitConverter.ToUInt32(typeData, 0);
 
-        if (response == null || response.Length < EqParamPacket.Size)
-            return null;
+        // Read frequency (float)
+        var freqData = ControlTransferIn(VendorCommands.GetEqParam, EncodeEqValue(channel, band, EqParamFreq), 4);
+        if (freqData == null || freqData.Length < 4) return null;
+        var freq = BitConverter.ToSingle(freqData, 0);
 
-        var eq = EqParamPacket.FromBytes(response);
-        return eq.ToFilterParams();
+        // Read Q (float)
+        var qData = ControlTransferIn(VendorCommands.GetEqParam, EncodeEqValue(channel, band, EqParamQ), 4);
+        if (qData == null || qData.Length < 4) return null;
+        var q = BitConverter.ToSingle(qData, 0);
+
+        // Read gain (float)
+        var gainData = ControlTransferIn(VendorCommands.GetEqParam, EncodeEqValue(channel, band, EqParamGain), 4);
+        if (gainData == null || gainData.Length < 4) return null;
+        var gain = BitConverter.ToSingle(gainData, 0);
+
+        return new FilterParams
+        {
+            Type = (FilterType)type,
+            Frequency = freq,
+            Q = q,
+            Gain = gain
+        };
     }
 
     /// <summary>
