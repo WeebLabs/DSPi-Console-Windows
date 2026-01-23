@@ -22,9 +22,20 @@ public static class VendorCommands
     public const byte SetDelay = 0x48;
     public const byte GetDelay = 0x49;
     public const byte GetStatus = 0x50;
-    public const byte SaveParams = 0x52;
-    public const byte LoadParams = 0x53;
-    public const byte FactoryReset = 0x54;
+    public const byte SaveParams = 0x51;
+    public const byte LoadParams = 0x52;
+    public const byte FactoryReset = 0x53;
+}
+
+/// <summary>
+/// Flash operation result codes from firmware.
+/// </summary>
+public static class FlashResult
+{
+    public const byte Ok = 0;
+    public const byte ErrWrite = 1;
+    public const byte ErrNoData = 2;
+    public const byte ErrCrc = 3;
 }
 
 /// <summary>
@@ -519,26 +530,32 @@ public partial class DspDevice : ObservableObject, IDisposable
 
     /// <summary>
     /// Save current parameters to flash memory.
+    /// Returns FlashResult code.
     /// </summary>
-    public bool SaveParams()
+    public byte SaveParams()
     {
-        return ControlTransferOut(VendorCommands.SaveParams);
+        var response = ControlTransferIn(VendorCommands.SaveParams, 0, 1);
+        return response != null && response.Length >= 1 ? response[0] : FlashResult.ErrWrite;
     }
 
     /// <summary>
     /// Load parameters from flash memory.
+    /// Returns FlashResult code.
     /// </summary>
-    public bool LoadParams()
+    public byte LoadParams()
     {
-        return ControlTransferOut(VendorCommands.LoadParams);
+        var response = ControlTransferIn(VendorCommands.LoadParams, 0, 1);
+        return response != null && response.Length >= 1 ? response[0] : FlashResult.ErrWrite;
     }
 
     /// <summary>
     /// Reset all parameters to factory defaults.
+    /// Returns FlashResult code.
     /// </summary>
-    public bool FactoryReset()
+    public byte FactoryReset()
     {
-        return ControlTransferOut(VendorCommands.FactoryReset);
+        var response = ControlTransferIn(VendorCommands.FactoryReset, 0, 1);
+        return response != null && response.Length >= 1 ? response[0] : FlashResult.ErrWrite;
     }
 
     #endregion

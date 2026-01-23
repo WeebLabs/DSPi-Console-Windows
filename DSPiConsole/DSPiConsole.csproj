@@ -33,6 +33,12 @@
     <ProjectReference Include="..\DSPiConsole.Usb\DSPiConsole.Usb.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="autoeq_database.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <ProjectCapability Include="Msix" />
   </ItemGroup>

@@ -169,7 +169,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
         }
 
-        FiltersChanged?.Invoke(this, EventArgs.Empty);
+        // Dispatch FiltersChanged to run after all filter updates are processed
+        _dispatcher.TryEnqueue(() => FiltersChanged?.Invoke(this, EventArgs.Empty));
     }
 
     private void FetchStatus()
@@ -284,6 +285,43 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void Reconnect()
     {
         _device.Reconnect();
+    }
+
+    /// <summary>
+    /// Save current parameters to device flash.
+    /// </summary>
+    public byte SaveParams()
+    {
+        if (!IsDeviceConnected) return FlashResult.ErrWrite;
+        return _device.SaveParams();
+    }
+
+    /// <summary>
+    /// Load parameters from device flash, refreshing UI.
+    /// </summary>
+    public byte LoadParams()
+    {
+        if (!IsDeviceConnected) return FlashResult.ErrWrite;
+        var result = _device.LoadParams();
+        if (result == FlashResult.Ok)
+        {
+            FetchAll();
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Reset all parameters to factory defaults, refreshing UI.
+    /// </summary>
+    public byte FactoryResetParams()
+    {
+        if (!IsDeviceConnected) return FlashResult.ErrWrite;
+        var result = _device.FactoryReset();
+        if (result == FlashResult.Ok)
+        {
+            FetchAll();
+        }
+        return result;
     }
 
     #endregion
