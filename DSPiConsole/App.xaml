@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="DSPiConsole.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DSPiConsole">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Channel Colors -->
+            <Color x:Key="MasterLeftColor">#FF4A8FE3</Color>
+            <Color x:Key="MasterRightColor">#FFF57373</Color>
+            <Color x:Key="OutLeftColor">#FF45C2A3</Color>
+            <Color x:Key="OutRightColor">#FFF0C459</Color>
+            <Color x:Key="SubColor">#FFBA87F3</Color>
+
+            <SolidColorBrush x:Key="MasterLeftBrush" Color="{StaticResource MasterLeftColor}" />
+            <SolidColorBrush x:Key="MasterRightBrush" Color="{StaticResource MasterRightColor}" />
+            <SolidColorBrush x:Key="OutLeftBrush" Color="{StaticResource OutLeftColor}" />
+            <SolidColorBrush x:Key="OutRightBrush" Color="{StaticResource OutRightColor}" />
+            <SolidColorBrush x:Key="SubBrush" Color="{StaticResource SubColor}" />
+
+            <!-- Custom Styles -->
+            <Style x:Key="SubtleButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="8,4" />
+            </Style>
+
+            <Style x:Key="SidebarSectionHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Margin" Value="0,8,0,4" />
+            </Style>
+
+            <Style x:Key="MonospacedStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Cascadia Code, Consolas, monospace" />
+            </Style>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
