@@ -1283,6 +1283,9 @@ public sealed partial class MainWindow : Window
         var dialog = new AutoEQBrowserDialog { XamlRoot = Content.XamlRoot };
         var result = await dialog.ShowAsync();
 
+        // Always refresh favorites menu after dialog closes (user may have added/removed favorites)
+        RefreshAutoEQFavoritesMenu();
+
         if (result == ContentDialogResult.Primary && dialog.SelectedProfile != null)
         {
             ApplyAutoEQProfile(dialog.SelectedProfile);

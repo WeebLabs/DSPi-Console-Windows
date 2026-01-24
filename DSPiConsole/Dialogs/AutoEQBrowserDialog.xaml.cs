@@ -13,44 +13,104 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
     private readonly AutoEQManager _manager = AutoEQManager.Instance;
     private List<HeadphoneEntry> _currentResults = new();
     private HeadphoneEntry? _selectedEntry;
+    private int _loadedCount = 0;
+    private const int BatchSize = 50;
+    private bool _isLoading = false;
 
     public HeadphoneEntry? SelectedProfile => _selectedEntry;
 
     public AutoEQBrowserDialog()
     {
         InitializeComponent();
+        Loaded += OnDialogLoaded;
+    }
+
+    private void OnDialogLoaded(object sender, RoutedEventArgs e)
+    {
+        // Find the ScrollViewer inside the ListView and attach to scroll events
+        var scrollViewer = FindScrollViewer(ResultsList);
+        if (scrollViewer != null)
+        {
+            scrollViewer.ViewChanged += OnScrollViewChanged;
+        }
+
         LoadEntries();
+    }
+
+    private ScrollViewer? FindScrollViewer(DependencyObject parent)
+    {
+        for (int i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is ScrollViewer sv)
+                return sv;
+
+            var result = FindScrollViewer(child);
+            if (result != null)
+                return result;
+        }
+        return null;
+    }
+
+    private void OnScrollViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (_isLoading) return;
+
+        if (sender is ScrollViewer sv)
+        {
+            // Load more when near the bottom (within 100 pixels)
+            var distanceFromBottom = sv.ScrollableHeight - sv.VerticalOffset;
+            if (distanceFromBottom < 100 && _loadedCount < _currentResults.Count)
+            {
+                LoadMoreItems();
+            }
+        }
     }
 
     private void LoadEntries()
     {
         _currentResults = _manager.Entries.ToList();
-        PopulateList(_currentResults);
+        _loadedCount = 0;
+        ResultsList.Items.Clear();
+        LoadMoreItems();
+    }
+
+    private void LoadMoreItems()
+    {
+        if (_isLoading || _loadedCount >= _currentResults.Count)
+            return;
+
+        _isLoading = true;
+
+        var itemsToLoad = _currentResults.Skip(_loadedCount).Take(BatchSize);
+        foreach (var entry in itemsToLoad)
+        {
+            var item = CreateListItem(entry);
+            ResultsList.Items.Add(item);
+            _loadedCount++;
+        }
+
+        _isLoading = false;
     }
 
     private void PopulateList(IEnumerable<HeadphoneEntry> entries)
     {
+        _currentResults = entries.ToList();
+        _loadedCount = 0;
         ResultsList.Items.Clear();
-
-        foreach (var entry in entries.Take(100))
-        {
-            var item = CreateListItem(entry);
-            ResultsList.Items.Add(item);
-        }
+        LoadMoreItems();
     }
 
     private ListViewItem CreateListItem(HeadphoneEntry entry)
     {
         var item = new ListViewItem { Tag = entry };
 
-        // Use a DockPanel-like layout with Grid
         var grid = new Grid
         {
             Padding = new Thickness(8, 6, 8, 6),
             ColumnSpacing = 12
         };
 
-        // Three columns: icon (auto), content (fill), heart (auto)
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -164,7 +224,9 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
             {
                 _currentResults = _manager.Search(query).ToList();
             }
-            PopulateList(_currentResults);
+            _loadedCount = 0;
+            ResultsList.Items.Clear();
+            LoadMoreItems();
         }
     }
 
