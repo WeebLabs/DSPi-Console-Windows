@@ -26,9 +26,6 @@ public sealed partial class MainWindow : Window
 
     private Channel? _selectedChannel;
     private bool _isUpdatingDelay;
-    private MicaController? _micaController;
-    private DesktopAcrylicController? _acrylicController;
-    private SystemBackdropConfiguration? _backdropConfig;
 
     // Simple channel selection: 0 = dashboard, 1-5 = channel index
     private int _selectedChannelIndex = 0;
@@ -49,11 +46,8 @@ public sealed partial class MainWindow : Window
         {
             appWindow.Resize(new Windows.Graphics.SizeInt32(1000, 825));
             appWindow.Title = "DSPi Console";
-            appWindow.TitleBar.BackgroundColor = Microsoft.UI.Colors.Black;
         }
 
-        // Try to apply Mica backdrop, fall back to Acrylic
-        TrySetSystemBackdrop();
 
         // Initialize channel lists
         InitializeChannelLists();
@@ -101,80 +95,6 @@ public sealed partial class MainWindow : Window
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
         return AppWindow.GetFromWindowId(windowId);
-    }
-
-    private bool TrySetSystemBackdrop()
-    {
-        if (MicaController.IsSupported())
-        {
-            _backdropConfig = new SystemBackdropConfiguration();
-            _micaController = new MicaController();
-
-            Activated += (s, e) =>
-            {
-                _backdropConfig.IsInputActive = e.WindowActivationState != WindowActivationState.Deactivated;
-            };
-
-            ((FrameworkElement)Content).ActualThemeChanged += (s, e) =>
-            {
-                if (_backdropConfig != null)
-                {
-                    SetConfigurationSourceTheme();
-                }
-            };
-
-            SetConfigurationSourceTheme();
-            _micaController.AddSystemBackdropTarget(this.As<Microsoft.UI.Composition.ICompositionSupportsSystemBackdrop>());
-            _micaController.SetSystemBackdropConfiguration(_backdropConfig);
-
-            // Apply semi-transparent background to sidebar for Mica effect
-            SidebarGrid.Background = new SolidColorBrush(Color.FromArgb(200, 32, 32, 32));
-
-            return true;
-        }
-        
-        if (DesktopAcrylicController.IsSupported())
-        {
-            _backdropConfig = new SystemBackdropConfiguration();
-            _acrylicController = new DesktopAcrylicController();
-
-            Activated += (s, e) =>
-            {
-                _backdropConfig.IsInputActive = e.WindowActivationState != WindowActivationState.Deactivated;
-            };
-
-            ((FrameworkElement)Content).ActualThemeChanged += (s, e) =>
-            {
-                if (_backdropConfig != null)
-                {
-                    SetConfigurationSourceTheme();
-                }
-            };
-
-            SetConfigurationSourceTheme();
-            _acrylicController.AddSystemBackdropTarget(this.As<Microsoft.UI.Composition.ICompositionSupportsSystemBackdrop>());
-            _acrylicController.SetSystemBackdropConfiguration(_backdropConfig);
-
-            SidebarGrid.Background = new SolidColorBrush(Color.FromArgb(180, 32, 32, 32));
-
-            return true;
-        }
-
-        // Fallback - solid color
-        SidebarGrid.Background = new SolidColorBrush(Color.FromArgb(255, 40, 40, 44));
-        return false;
-    }
-
-    private void SetConfigurationSourceTheme()
-    {
-        if (_backdropConfig == null) return;
-
-        _backdropConfig.Theme = ((FrameworkElement)Content).ActualTheme switch
-        {
-            ElementTheme.Dark => SystemBackdropTheme.Dark,
-            ElementTheme.Light => SystemBackdropTheme.Light,
-            _ => SystemBackdropTheme.Default
-        };
     }
 
     private void InitializeChannelLists()

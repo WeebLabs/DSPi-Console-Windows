@@ -8,7 +8,11 @@
     xmlns:models="using:DSPiConsole.Core.Models"
     Title="DSPi Console">
 
-    <Grid>
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop/>
+    </Window.SystemBackdrop>
+
+    <Grid Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -34,7 +38,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0" x:Name="SidebarGrid">
+            <Grid Grid.Column="0" x:Name="SidebarGrid" Background="Transparent">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
@@ -54,8 +58,7 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <StackPanel Grid.Row="1" Padding="12" Spacing="12" 
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Grid.Row="1" Padding="12" Spacing="12">
                     <TextBlock Text="GLOBAL" FontSize="10" FontWeight="SemiBold" 
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
@@ -78,8 +81,7 @@
                     </ToggleButton>
                 </StackPanel>
 
-                <StackPanel Grid.Row="2" Padding="12" Spacing="12" 
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Grid.Row="2" Padding="12" Spacing="12">
                     <TextBlock Text="SYSTEM STATUS" FontSize="10" FontWeight="SemiBold" 
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
@@ -156,8 +158,7 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Grid.Row="3" Padding="12,8" 
-                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                <Border Grid.Row="3" Padding="12,8">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -178,7 +179,7 @@
                 </Border>
             </Grid>
 
-            <Grid Grid.Column="1" Padding="20">
+            <Grid Grid.Column="1" Padding="20" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="250" />
