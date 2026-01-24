@@ -28,10 +28,11 @@
                 <converters:ChannelToBrushConverter x:Key="ChannelToBrush" />
                 <converters:FloatFormatConverter x:Key="FloatFormat" />
             </Grid.Resources>
-
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" MinWidth="200" MaxWidth="300" />
-                <ColumnDefinition Width="*" />
+			
+            <!--This determines the sidebar width-->
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="280" MinWidth="200" MaxWidth="300" /> 
+				<ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0" x:Name="SidebarGrid" Background="Transparent">
@@ -42,25 +43,26 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
+                <!-- This is where we set the inpupt and output channel text padding and styles-->
                 <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="12">
-                        <TextBlock Text="INPUTS" FontSize="10" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,8,0,4" />
+                        <TextBlock Text="INPUTS" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorGhostlyBrush}" Margin="0,8,0,4" />
                         <ListView x:Name="InputChannelsList" SelectionMode="Single" Margin="-12,0,-12,0" Padding="0">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
-                                    <Setter Property="Padding" Value="12,0,12,0"/>
+                                    <Setter Property="Padding" Value="22,0,12,0"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 </Style>
                             </ListView.ItemContainerStyle>
                         </ListView>
 
-                        <TextBlock Text="OUTPUTS" FontSize="10" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,16,0,4" />
+                        <TextBlock Text="OUTPUTS" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorGhostlyBrush}" Margin="0,16,0,4" />
                         <ListView x:Name="OutputChannelsList" SelectionMode="Single" Margin="-12,0,-12,0" Padding="0">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
-                                    <Setter Property="Padding" Value="12,0,12,0"/>
+                                    <Setter Property="Padding" Value="22,0,12,0"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 </Style>
                             </ListView.ItemContainerStyle>
@@ -76,8 +78,9 @@
                         <Grid>
                             <TextBlock Text="Preamp" FontSize="12" 
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <TextBlock x:Name="PreampValueText" HorizontalAlignment="Right" 
-                                       FontSize="12" FontFamily="Cascadia Code, Consolas" />
+                            <TextBlock x:Name="PreampValueText" HorizontalAlignment="Right"
+                                       FontSize="12" FontFamily="Cascadia Code, Consolas"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         </Grid>
                         <Slider x:Name="PreampSlider" Minimum="-60" Maximum="10" 
                                 ValueChanged="OnPreampSliderChanged" />

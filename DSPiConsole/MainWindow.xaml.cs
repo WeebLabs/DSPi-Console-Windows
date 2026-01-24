@@ -108,11 +108,9 @@ public sealed partial class MainWindow : Window
         if (!DesktopAcrylicController.IsSupported())
             return;
 
-        _configurationSource = new SystemBackdropConfiguration();
-        this.Activated += (s, e) =>
+        _configurationSource = new SystemBackdropConfiguration
         {
-            if (_configurationSource != null)
-                _configurationSource.IsInputActive = e.WindowActivationState != WindowActivationState.Deactivated;
+            IsInputActive = true  // Always keep translucency visible, even when unfocused
         };
         this.Closed += (s, e) =>
         {
@@ -121,11 +119,12 @@ public sealed partial class MainWindow : Window
             _configurationSource = null;
         };
 
+        // Sidebar and titlebar translucency settings
         _acrylicController = new DesktopAcrylicController
         {
             TintColor = Windows.UI.Color.FromArgb(255, 32, 32, 32),
             TintOpacity = 0.5f,
-            LuminosityOpacity = 0.6f
+            LuminosityOpacity = 0.8f
         };
 
         _acrylicController.AddSystemBackdropTarget(this.As<Microsoft.UI.Composition.ICompositionSupportsSystemBackdrop>());
@@ -173,7 +172,8 @@ public sealed partial class MainWindow : Window
         var nameText = new TextBlock
         {
             Text = channel.Name,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         };
         Grid.SetColumn(nameText, 0);
         grid.Children.Add(nameText);
