@@ -181,11 +181,11 @@ public sealed partial class MainWindow : Window
         // Modern pill-shaped badge with glow indicator
         var badge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(40, channel.Color.R, channel.Color.G, channel.Color.B)),
+            Background = new SolidColorBrush(Color.FromArgb(15, channel.Color.R, channel.Color.G, channel.Color.B)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(80, channel.Color.R, channel.Color.G, channel.Color.B)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(8, 3, 10, 3),
+            Padding = new Thickness(10, 3, 10, 3),
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -221,9 +221,9 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        dotContainer.Children.Add(dotCore);
+        //dotContainer.Children.Add(dotCore);
 
-        badgeContent.Children.Add(dotContainer);
+        //badgeContent.Children.Add(dotContainer);
 
         var badgeText = new TextBlock
         {
@@ -232,7 +232,7 @@ public sealed partial class MainWindow : Window
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = new SolidColorBrush(Color.FromArgb(230, channel.Color.R, channel.Color.G, channel.Color.B)),
             VerticalAlignment = VerticalAlignment.Center,
-            CharacterSpacing = 40
+            CharacterSpacing = 80
         };
         badgeContent.Children.Add(badgeText);
 
