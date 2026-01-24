@@ -8,10 +8,6 @@
     xmlns:models="using:DSPiConsole.Core.Models"
     Title="DSPi Console">
 
-    <Window.SystemBackdrop>
-        <DesktopAcrylicBackdrop/>
-    </Window.SystemBackdrop>
-
     <Grid Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

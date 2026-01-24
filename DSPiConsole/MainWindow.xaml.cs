@@ -31,10 +31,16 @@ public sealed partial class MainWindow : Window
     private int _selectedChannelIndex = 0;
     private readonly List<ListViewItem> _channelListItems = new();
 
+    // Acrylic backdrop
+    private DesktopAcrylicController? _acrylicController;
+    private SystemBackdropConfiguration? _configurationSource;
+
     public MainWindow()
     {
         InitializeComponent();
         this.ExtendsContentIntoTitleBar = true;
+
+        SetupAcrylicBackdrop();
        // this.SetTitleBar(AppTitleBar);
 
         ViewModel = new MainViewModel();
@@ -95,6 +101,35 @@ public sealed partial class MainWindow : Window
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
         return AppWindow.GetFromWindowId(windowId);
+    }
+
+    private void SetupAcrylicBackdrop()
+    {
+        if (!DesktopAcrylicController.IsSupported())
+            return;
+
+        _configurationSource = new SystemBackdropConfiguration();
+        this.Activated += (s, e) =>
+        {
+            if (_configurationSource != null)
+                _configurationSource.IsInputActive = e.WindowActivationState != WindowActivationState.Deactivated;
+        };
+        this.Closed += (s, e) =>
+        {
+            _acrylicController?.Dispose();
+            _acrylicController = null;
+            _configurationSource = null;
+        };
+
+        _acrylicController = new DesktopAcrylicController
+        {
+            TintColor = Windows.UI.Color.FromArgb(255, 32, 32, 32),
+            TintOpacity = 0.5f,
+            LuminosityOpacity = 0.6f
+        };
+
+        _acrylicController.AddSystemBackdropTarget(this.As<Microsoft.UI.Composition.ICompositionSupportsSystemBackdrop>());
+        _acrylicController.SetSystemBackdropConfiguration(_configurationSource);
     }
 
     private void InitializeChannelLists()
