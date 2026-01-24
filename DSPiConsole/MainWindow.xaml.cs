@@ -1336,9 +1336,21 @@ public sealed partial class MainWindow : Window
             var clearItem = new MenuFlyoutItem { Text = "Clear Favorites" };
             clearItem.Click += async (s, e) =>
             {
-                AutoEQManager.Instance.ClearFavorites();
-                RefreshAutoEQFavoritesMenu();
-                await ShowInfoDialog("Favorites cleared");
+                var dialog = new ContentDialog
+                {
+                    Title = "Clear Favorites",
+                    Content = "Are you sure you want to clear all AutoEQ favorites?",
+                    PrimaryButtonText = "Clear",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot
+                };
+
+                if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                {
+                    AutoEQManager.Instance.ClearFavorites();
+                    RefreshAutoEQFavoritesMenu();
+                }
             };
             AutoEQFavoritesMenu.Items.Add(clearItem);
         }
