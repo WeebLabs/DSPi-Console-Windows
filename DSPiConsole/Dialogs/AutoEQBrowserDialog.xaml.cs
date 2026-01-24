@@ -2,6 +2,7 @@ using DSPiConsole.Services;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
@@ -31,7 +32,7 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
     {
         ResultsList.Items.Clear();
 
-        foreach (var entry in entries.Take(100)) // Limit for performance
+        foreach (var entry in entries.Take(100))
         {
             var item = CreateListItem(entry);
             ResultsList.Items.Add(item);
@@ -42,24 +43,36 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
     {
         var item = new ListViewItem { Tag = entry };
 
-        var grid = new Grid { Padding = new Thickness(8, 6, 8, 6) };
+        // Use a DockPanel-like layout with Grid
+        var grid = new Grid
+        {
+            Padding = new Thickness(8, 6, 8, 6),
+            ColumnSpacing = 12
+        };
+
+        // Three columns: icon (auto), content (fill), heart (auto)
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnSpacing = 12;
 
-        // Form factor icon
+        // Column 0: Form factor icon
         var icon = new FontIcon
         {
             Glyph = entry.FormFactorIcon,
             FontSize = 20,
-            Foreground = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215))
+            Foreground = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)),
+            VerticalAlignment = VerticalAlignment.Center
         };
         Grid.SetColumn(icon, 0);
         grid.Children.Add(icon);
 
-        // Name and source
-        var infoStack = new StackPanel { Spacing = 2 };
+        // Column 1: Name and details
+        var infoStack = new StackPanel
+        {
+            Spacing = 2,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
 
         var nameText = new TextBlock
         {
@@ -85,34 +98,51 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
         };
         detailsStack.Children.Add(sourceBadge);
 
-        var filterCountText = new TextBlock
+        detailsStack.Children.Add(new TextBlock
         {
             Text = $"{entry.Filters.Count} filters",
             FontSize = 10,
             Foreground = new SolidColorBrush(Colors.Gray),
             VerticalAlignment = VerticalAlignment.Center
-        };
-        detailsStack.Children.Add(filterCountText);
+        });
 
         infoStack.Children.Add(detailsStack);
         Grid.SetColumn(infoStack, 1);
         grid.Children.Add(infoStack);
 
-        // Favorite button
-        var favoriteBtn = new Button
-        {
-            Background = new SolidColorBrush(Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(4),
-            Tag = entry
-        };
+        // Column 2: Favorite heart button
         var isFavorite = _manager.IsFavorite(entry);
-        favoriteBtn.Content = new FontIcon
+        var heartIcon = new FontIcon
         {
             Glyph = isFavorite ? "\uEB52" : "\uEB51",
             FontSize = 14,
-            Foreground = new SolidColorBrush(isFavorite ? Colors.Red : Colors.Gray)
+            Foreground = new SolidColorBrush(isFavorite ? Colors.Red : Color.FromArgb(60, 128, 128, 128))
         };
+
+        var favoriteBtn = new Button
+        {
+            Content = heartIcon,
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(6),
+            MinWidth = 32,
+            MinHeight = 32,
+            Tag = entry,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        favoriteBtn.PointerEntered += (s, e) =>
+        {
+            var currentFavorite = _manager.IsFavorite(entry);
+            heartIcon.Foreground = new SolidColorBrush(currentFavorite ? Colors.Red : Colors.Gray);
+        };
+
+        favoriteBtn.PointerExited += (s, e) =>
+        {
+            var currentFavorite = _manager.IsFavorite(entry);
+            heartIcon.Foreground = new SolidColorBrush(currentFavorite ? Colors.Red : Color.FromArgb(60, 128, 128, 128));
+        };
+
         favoriteBtn.Click += OnFavoriteClick;
         Grid.SetColumn(favoriteBtn, 2);
         grid.Children.Add(favoriteBtn);
@@ -171,7 +201,6 @@ public sealed partial class AutoEQBrowserDialog : ContentDialog
         {
             _manager.ToggleFavorite(entry);
 
-            // Update button appearance
             var isFavorite = _manager.IsFavorite(entry);
             if (btn.Content is FontIcon icon)
             {

@@ -8,7 +8,7 @@
     DefaultButton="Primary"
     IsPrimaryButtonEnabled="False">
 
-    <Grid Width="550" Height="450">
+    <Grid Width="500" Height="450">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -27,7 +27,13 @@
         <ListView x:Name="ResultsList"
                   Grid.Row="1"
                   SelectionMode="Single"
-                  SelectionChanged="OnSelectionChanged"/>
+                  SelectionChanged="OnSelectionChanged">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+        </ListView>
 
         <!-- Selected Profile Info -->
         <Border x:Name="SelectedInfoPanel"

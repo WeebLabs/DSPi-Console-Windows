@@ -47,7 +47,7 @@ public sealed partial class MainWindow : Window
         var appWindow = GetAppWindow();
         if (appWindow != null)
         {
-            appWindow.Resize(new Windows.Graphics.SizeInt32(1100, 800));
+            appWindow.Resize(new Windows.Graphics.SizeInt32(1000, 825));
             appWindow.Title = "DSPi Console";
             appWindow.TitleBar.BackgroundColor = Microsoft.UI.Colors.Black;
         }
