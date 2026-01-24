@@ -10,6 +10,17 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Softer text colors for dark theme -->
+            <Color x:Key="TextFillColorPrimary">#E0E0E0</Color>
+            <Color x:Key="TextFillColorSecondary">#CCCCCC</Color>
+            <Color x:Key="TextFillColorTertiary">#888888</Color>
+            <Color x:Key="TextFillColorDisabled">#4D4D4D</Color>
+
+            <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="{StaticResource TextFillColorPrimary}" />
+            <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="{StaticResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="{StaticResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="TextFillColorDisabledBrush" Color="{StaticResource TextFillColorDisabled}" />
+
             <!-- Channel Colors -->
             <Color x:Key="MasterLeftColor">#FF4A8FE3</Color>
             <Color x:Key="MasterRightColor">#FFF57373</Color>

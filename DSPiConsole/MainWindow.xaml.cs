@@ -159,10 +159,14 @@ public sealed partial class MainWindow : Window
     private ListViewItem CreateChannelListItem(Channel channel, int index)
     {
         // Store both channel and index in Tag
-        var item = new ListViewItem { Tag = (channel, index) };
+        var item = new ListViewItem
+        {
+            Tag = (channel, index),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
         item.Tapped += OnChannelItemTapped;
 
-        var grid = new Grid { Height = 32, Padding = new Thickness(4, 0, 4, 0) };
+        var grid = new Grid { Height = 32, HorizontalAlignment = HorizontalAlignment.Stretch };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -174,20 +178,65 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(nameText, 0);
         grid.Children.Add(nameText);
 
+        // Modern pill-shaped badge with glow indicator
         var badge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(51, channel.Color.R, channel.Color.G, channel.Color.B)),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(8, 2, 8, 2)
+            Background = new SolidColorBrush(Color.FromArgb(40, channel.Color.R, channel.Color.G, channel.Color.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(80, channel.Color.R, channel.Color.G, channel.Color.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 3, 10, 3),
+            VerticalAlignment = VerticalAlignment.Center
         };
+
+        var badgeContent = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6
+        };
+
+        // Glowing indicator dot with layered effect
+        var dotContainer = new Grid
+        {
+            Width = 8,
+            Height = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        // Outer glow
+        var dotGlow = new Ellipse
+        {
+            Width = 8,
+            Height = 8,
+            Fill = new SolidColorBrush(Color.FromArgb(100, channel.Color.R, channel.Color.G, channel.Color.B))
+        };
+        dotContainer.Children.Add(dotGlow);
+
+        // Inner bright dot
+        var dotCore = new Ellipse
+        {
+            Width = 5,
+            Height = 5,
+            Fill = new SolidColorBrush(channel.Color),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        dotContainer.Children.Add(dotCore);
+
+        badgeContent.Children.Add(dotContainer);
+
         var badgeText = new TextBlock
         {
             Text = channel.Descriptor,
             FontSize = 9,
-            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-            Foreground = new SolidColorBrush(channel.Color)
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromArgb(230, channel.Color.R, channel.Color.G, channel.Color.B)),
+            VerticalAlignment = VerticalAlignment.Center,
+            CharacterSpacing = 40
         };
-        badge.Child = badgeText;
+        badgeContent.Children.Add(badgeText);
+
+        badge.Child = badgeContent;
         Grid.SetColumn(badge, 1);
         grid.Children.Add(badge);
 
@@ -437,18 +486,22 @@ public sealed partial class MainWindow : Window
 
         if (isActive)
         {
+            var secondaryBrush = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+            var tertiaryBrush = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"];
+
             valuesPanel.Children.Add(new TextBlock
             {
                 Text = $"{p.Frequency:F0}",
                 FontSize = 10,
                 FontFamily = new FontFamily("Cascadia Code"),
+                Foreground = secondaryBrush,
                 VerticalAlignment = VerticalAlignment.Center
             });
             valuesPanel.Children.Add(new TextBlock
             {
                 Text = "Hz",
                 FontSize = 8,
-                Foreground = new SolidColorBrush(Colors.Gray),
+                Foreground = tertiaryBrush,
                 VerticalAlignment = VerticalAlignment.Center
             });
 
@@ -459,6 +512,7 @@ public sealed partial class MainWindow : Window
                     Text = $" {p.Gain:+0.0;-0.0}",
                     FontSize = 10,
                     FontFamily = new FontFamily("Cascadia Code"),
+                    Foreground = secondaryBrush,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(4, 0, 0, 0)
                 });
@@ -466,7 +520,7 @@ public sealed partial class MainWindow : Window
                 {
                     Text = "dB",
                     FontSize = 8,
-                    Foreground = new SolidColorBrush(Colors.Gray),
+                    Foreground = tertiaryBrush,
                     VerticalAlignment = VerticalAlignment.Center
                 });
             }
@@ -478,7 +532,7 @@ public sealed partial class MainWindow : Window
                     Text = $" {p.Q:F1}",
                     FontSize = 10,
                     FontFamily = new FontFamily("Cascadia Code"),
-                    Foreground = new SolidColorBrush(Colors.Gray),
+                    Foreground = secondaryBrush,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(4, 0, 0, 0)
                 });
@@ -486,7 +540,7 @@ public sealed partial class MainWindow : Window
                 {
                     Text = "Q",
                     FontSize = 8,
-                    Foreground = new SolidColorBrush(Colors.Gray),
+                    Foreground = tertiaryBrush,
                     VerticalAlignment = VerticalAlignment.Center
                 });
             }
@@ -702,7 +756,7 @@ public sealed partial class MainWindow : Window
         {
             Text = label,
             FontSize = 12,
-            Foreground = new SolidColorBrush(Colors.Gray),
+            Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"],
             VerticalAlignment = VerticalAlignment.Center
         });
 

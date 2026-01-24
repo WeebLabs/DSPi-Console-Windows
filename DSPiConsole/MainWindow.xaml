@@ -44,13 +44,27 @@
 
                 <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="12">
-                        <TextBlock Text="INPUTS" FontSize="10" FontWeight="SemiBold" 
+                        <TextBlock Text="INPUTS" FontSize="10" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,8,0,4" />
-                        <ListView x:Name="InputChannelsList" SelectionMode="Single" />
+                        <ListView x:Name="InputChannelsList" SelectionMode="Single" Margin="-12,0,-12,0" Padding="0">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="Padding" Value="12,0,12,0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
 
                         <TextBlock Text="OUTPUTS" FontSize="10" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,16,0,4" />
-                        <ListView x:Name="OutputChannelsList" SelectionMode="Single" />
+                        <ListView x:Name="OutputChannelsList" SelectionMode="Single" Margin="-12,0,-12,0" Padding="0">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="Padding" Value="12,0,12,0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -180,12 +194,12 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="250" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,16">
-                    <TextBlock Text="DSPi Console" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <TextBlock Text="Filter Response" FontSize="14" FontWeight="Medium"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
                     <Button HorizontalAlignment="Right" VerticalAlignment="Center"
                             Background="Transparent" BorderThickness="0" Padding="8">
                         <FontIcon Glyph="&#xE713;" FontSize="18"/>
@@ -232,13 +246,10 @@
                     <controls:BodePlotControl x:Name="BodePlot" />
                 </Border>
 
-                <StackPanel x:Name="LegendPanel" Grid.Row="2" Orientation="Horizontal" 
-                            Spacing="8" Margin="0,12,0,0" />
+                <StackPanel x:Name="LegendPanel" Grid.Row="2" Orientation="Horizontal"
+                            Spacing="8" Margin="0,12,0,16" />
 
-                <Border Grid.Row="3" Height="1" 
-                        Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,16" />
-
-                <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
                     <Grid>
                         <StackPanel x:Name="DashboardPanel" Spacing="16" />
                         <StackPanel x:Name="ChannelEditorPanel" Visibility="Collapsed" Spacing="12" />
