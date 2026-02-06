@@ -68,26 +68,6 @@ For release builds:
 dotnet build -c Release -r win-x64
 ```
 
-## USB Driver Setup
-
-The DSPi device presents as a UAC 1.0 audio device with vendor-specific control requests. The application uses LibUsbDotNet for USB communication.
-
-### Option 1: WinUSB Driver (Recommended)
-
-Use Zadig (https://zadig.akeo.ie/) to install the WinUSB driver:
-
-1. Connect your DSPi device
-2. Run Zadig as Administrator
-3. Select "Pico DSP 2.1" from the device list (Options → List All Devices if not visible)
-4. Select "WinUSB" as the driver
-5. Click "Install Driver"
-
-**Note**: This will replace the audio driver for the control interface only. The audio streaming will continue to work through the standard Windows audio driver.
-
-### Option 2: libusb-win32
-
-If WinUSB doesn't work, try installing libusb-win32 via Zadig instead.
-
 ## Usage
 
 ### Basic Operation
