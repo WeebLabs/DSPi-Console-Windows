@@ -28,6 +28,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // Channel delays: Dictionary<ChannelId, float>
     private readonly Dictionary<int, float> _channelDelays = new();
 
+    // Channel gains: Dictionary<ChannelId, float> (output channels only)
+    private readonly Dictionary<int, float> _channelGains = new();
+
+    // Channel mutes: Dictionary<ChannelId, bool> (output channels only)
+    private readonly Dictionary<int, bool> _channelMutes = new();
+
     [ObservableProperty]
     private float _preampDb;
 
@@ -46,9 +52,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private Channel? _selectedChannel;
 
+    [ObservableProperty]
+    private bool _loudnessEnabled;
+
+    [ObservableProperty]
+    private float _loudnessRefSPL = 83.0f;
+
+    [ObservableProperty]
+    private float _loudnessIntensity = 100.0f;
+
     public IReadOnlyDictionary<int, ObservableCollection<FilterParams>> ChannelData => _channelData;
     public IReadOnlyDictionary<int, bool> ChannelVisibility => _channelVisibility;
     public IReadOnlyDictionary<int, float> ChannelDelays => _channelDelays;
+    public IReadOnlyDictionary<int, float> ChannelGains => _channelGains;
+    public IReadOnlyDictionary<int, bool> ChannelMutes => _channelMutes;
+
+    public DspDevice Device => _device;
 
     // Event for notifying UI when graph needs redraw
     public event EventHandler? FiltersChanged;
@@ -70,6 +89,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _channelData[(int)channel.Id] = filters;
             _channelVisibility[(int)channel.Id] = true;
             _channelDelays[(int)channel.Id] = 0.0f;
+            if (channel.IsOutput)
+            {
+                _channelGains[(int)channel.Id] = 0.0f;
+                _channelMutes[(int)channel.Id] = false;
+            }
         }
 
         // Subscribe to device events
@@ -147,6 +171,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public float GetChannelDelay(Channel channel) =>
         _channelDelays.TryGetValue((int)channel.Id, out var d) ? d : 0;
 
+    public float GetChannelGain(Channel channel) =>
+        _channelGains.TryGetValue((int)channel.Id, out var g) ? g : 0;
+
+    public bool GetChannelMute(Channel channel) =>
+        _channelMutes.TryGetValue((int)channel.Id, out var m) && m;
+
     public ObservableCollection<FilterParams> GetFilters(Channel channel) =>
         _channelData.TryGetValue((int)channel.Id, out var f) ? f : new();
 
@@ -166,8 +196,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (channel.IsOutput)
             {
                 FetchDelay((int)channel.Id);
+                FetchChannelGain((int)channel.Id);
+                FetchChannelMute((int)channel.Id);
             }
         }
+
+        FetchLoudness();
 
         // Dispatch FiltersChanged to run after all filter updates are processed
         _dispatcher.TryEnqueue(() => FiltersChanged?.Invoke(this, EventArgs.Empty));
@@ -226,6 +260,88 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 });
             }
         }
+    }
+
+    public void SetChannelGain(int channelId, float db)
+    {
+        _channelGains[channelId] = db;
+        int outputIndex = channelId - (int)ChannelId.OutLeft;
+        _device.SetChannelGain(outputIndex, db);
+        OnPropertyChanged(nameof(ChannelGains));
+    }
+
+    private void FetchChannelGain(int channelId)
+    {
+        int outputIndex = channelId - (int)ChannelId.OutLeft;
+        var gain = _device.GetChannelGain(outputIndex);
+        if (gain.HasValue)
+        {
+            var current = _channelGains.TryGetValue(channelId, out var g) ? g : 0;
+            if (Math.Abs(current - gain.Value) > 0.01f)
+            {
+                _dispatcher.TryEnqueue(() =>
+                {
+                    _channelGains[channelId] = gain.Value;
+                    OnPropertyChanged(nameof(ChannelGains));
+                });
+            }
+        }
+    }
+
+    public void SetChannelMute(int channelId, bool muted)
+    {
+        _channelMutes[channelId] = muted;
+        int outputIndex = channelId - (int)ChannelId.OutLeft;
+        _device.SetChannelMute(outputIndex, muted);
+        OnPropertyChanged(nameof(ChannelMutes));
+    }
+
+    private void FetchChannelMute(int channelId)
+    {
+        int outputIndex = channelId - (int)ChannelId.OutLeft;
+        var muted = _device.GetChannelMute(outputIndex);
+        if (muted.HasValue)
+        {
+            var current = _channelMutes.TryGetValue(channelId, out var m) && m;
+            if (current != muted.Value)
+            {
+                _dispatcher.TryEnqueue(() =>
+                {
+                    _channelMutes[channelId] = muted.Value;
+                    OnPropertyChanged(nameof(ChannelMutes));
+                });
+            }
+        }
+    }
+
+    private void FetchLoudness()
+    {
+        var enabled = _device.GetLoudnessEnabled();
+        if (enabled.HasValue)
+            _dispatcher.TryEnqueue(() => LoudnessEnabled = enabled.Value);
+
+        var refSpl = _device.GetLoudnessRefSPL();
+        if (refSpl.HasValue)
+            _dispatcher.TryEnqueue(() => LoudnessRefSPL = refSpl.Value);
+
+        var intensity = _device.GetLoudnessIntensity();
+        if (intensity.HasValue)
+            _dispatcher.TryEnqueue(() => LoudnessIntensity = intensity.Value);
+    }
+
+    partial void OnLoudnessEnabledChanged(bool value)
+    {
+        _device.SetLoudnessEnabled(value);
+    }
+
+    partial void OnLoudnessRefSPLChanged(float value)
+    {
+        _device.SetLoudnessRefSPL(value);
+    }
+
+    partial void OnLoudnessIntensityChanged(float value)
+    {
+        _device.SetLoudnessIntensity(value);
     }
 
     partial void OnPreampDbChanged(float value)

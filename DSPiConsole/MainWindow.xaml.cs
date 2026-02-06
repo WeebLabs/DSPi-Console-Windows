@@ -8,6 +8,7 @@ using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -26,6 +27,15 @@ public sealed partial class MainWindow : Window
 
     private Channel? _selectedChannel;
     private bool _isUpdatingDelay;
+    private bool _isUpdatingGain;
+    private StatsWindow? _statsWindow;
+    private LoudnessWindow? _loudnessWindow;
+
+    // Track output controls for live updates
+    private TextBox? _currentGainTextBox;
+    private TextBox? _currentDelayTextBox;
+    private Slider? _currentGainSlider;
+    private Slider? _currentDelaySlider;
 
     // Simple channel selection: 0 = dashboard, 1-5 = channel index
     private int _selectedChannelIndex = 0;
@@ -80,6 +90,9 @@ public sealed partial class MainWindow : Window
             UpdateLegend();
             BodePlot.Invalidate();
         };
+
+        // Right-click preamp slider to reset to 0 dB
+        PreampSlider.RightTapped += (s, e) => { e.Handled = true; ViewModel.PreampDb = 0; };
 
         // Initial UI state
         UpdateConnectionStatus();
@@ -422,12 +435,15 @@ public sealed partial class MainWindow : Window
 
         if (showDelay)
         {
+            var gain = ViewModel.GetChannelGain(channel);
+            var isMuted = ViewModel.GetChannelMute(channel);
+
             panel.Children.Add(new TextBlock
             {
-                Text = $"Delay: {ViewModel.GetChannelDelay(channel):F0}ms",
+                Text = $"{gain:F1}dB  {ViewModel.GetChannelDelay(channel):F0}ms{(isMuted ? "  MUTED" : "")}",
                 FontSize = 9,
                 FontFamily = new FontFamily("Cascadia Code, Consolas"),
-                Foreground = new SolidColorBrush(Colors.Gray),
+                Foreground = new SolidColorBrush(isMuted ? Color.FromArgb(255, 200, 80, 80) : Colors.Gray),
                 Margin = new Thickness(8, 0, 0, 0)
             });
         }
@@ -613,45 +629,195 @@ public sealed partial class MainWindow : Window
 
         ChannelEditorPanel.Children.Add(titleRow);
 
-        // Delay control for output channels
+        // Output channel controls: Gain, Delay, Mute
         if (channel.IsOutput)
         {
-            var delayPanel = new Border
+            bool isMuted = ViewModel.GetChannelMute(channel);
+            var dimBrush = new SolidColorBrush(Color.FromArgb(160, 180, 180, 180));
+            var unitBrush = new SolidColorBrush(Color.FromArgb(140, 180, 180, 180));
+
+            var outputCard = new Border
             {
                 Background = new SolidColorBrush(Color.FromArgb(128, 45, 45, 48)),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16),
-                Margin = new Thickness(0, 8, 0, 0)
+                Padding = new Thickness(16, 12, 16, 16),
+                Margin = new Thickness(0, 4, 0, 4)
             };
 
-            var delayGrid = new Grid();
-            delayGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            delayGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            delayGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-            delayGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+            var cardGrid = new Grid { ColumnSpacing = 16 };
+            cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
+            cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
+            cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            delayGrid.Children.Add(new FontIcon { Glyph = "\uED5A", Foreground = new SolidColorBrush(Colors.Gray), Margin = new Thickness(0, 0, 8, 0) });
+            // ── Gain section (col 0) ──
+            var gainSection = new StackPanel { Spacing = 6 };
 
-            var delayLabel = new TextBlock { Text = "Output Delay:", VerticalAlignment = VerticalAlignment.Center, FontWeight = Microsoft.UI.Text.FontWeights.Medium };
-            Grid.SetColumn(delayLabel, 1);
-            delayGrid.Children.Add(delayLabel);
+            var gainLabelPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            gainLabelPanel.Children.Add(new FontIcon { Glyph = "\uE767", FontSize = 12, Foreground = dimBrush });
+            gainLabelPanel.Children.Add(new TextBlock
+            {
+                Text = "GAIN", FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = dimBrush
+            });
+            gainSection.Children.Add(gainLabelPanel);
 
-            var delaySlider = new Slider { Minimum = 0, Maximum = 170, Value = ViewModel.GetChannelDelay(channel), Margin = new Thickness(12, 0, 12, 0) };
-            delaySlider.Tag = channel;
+            var gainSliderRow = new Grid();
+            gainSliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            gainSliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var gainSlider = new Slider
+            {
+                Minimum = -60, Maximum = 10,
+                Value = ViewModel.GetChannelGain(channel),
+                Tag = channel, StepFrequency = 0.5
+            };
+            gainSlider.ValueChanged += OnGainSliderChanged;
+            gainSlider.RightTapped += (s, e) =>
+            {
+                e.Handled = true;
+                if (s is Slider sl && sl.Tag is Channel ch)
+                { ViewModel.SetChannelGain((int)ch.Id, 0); sl.Value = 0; }
+            };
+            Grid.SetColumn(gainSlider, 0);
+            gainSliderRow.Children.Add(gainSlider);
+            _currentGainSlider = gainSlider;
+
+            var gainValuePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+            var gainTextBox = new TextBox
+            {
+                Tag = channel, Width = 44,
+                Text = ViewModel.GetChannelGain(channel).ToString("F1"),
+                FontSize = 13,
+                FontFamily = new FontFamily("Cascadia Code, Consolas"),
+                Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
+            };
+            gainTextBox.TextChanged += OnGainTextChanged;
+            gainTextBox.KeyDown += (s, e) =>
+            {
+                if (e.Key == Windows.System.VirtualKey.Enter)
+                {
+                    e.Handled = true;
+                    // Move focus to hidden sink to clear selection and cursor
+                    FocusSink.Focus(FocusState.Programmatic);
+                }
+            };
+            gainValuePanel.Children.Add(gainTextBox);
+            gainValuePanel.Children.Add(new TextBlock { Text = "dB", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Foreground = unitBrush });
+            Grid.SetColumn(gainValuePanel, 1);
+            gainSliderRow.Children.Add(gainValuePanel);
+            _currentGainTextBox = gainTextBox;
+
+            gainSection.Children.Add(gainSliderRow);
+            Grid.SetColumn(gainSection, 0);
+            cardGrid.Children.Add(gainSection);
+
+            // Vertical separator (col 1)
+            var separator = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Width = 1, VerticalAlignment = VerticalAlignment.Stretch
+            };
+            Grid.SetColumn(separator, 1);
+            cardGrid.Children.Add(separator);
+
+            // ── Delay section (col 2) ──
+            var delaySection = new StackPanel { Spacing = 6 };
+
+            var delayLabelPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            delayLabelPanel.Children.Add(new FontIcon { Glyph = "\uED5A", FontSize = 12, Foreground = dimBrush });
+            delayLabelPanel.Children.Add(new TextBlock
+            {
+                Text = "DELAY", FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = dimBrush
+            });
+            delaySection.Children.Add(delayLabelPanel);
+
+            var delaySliderRow = new Grid();
+            delaySliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            delaySliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var delaySlider = new Slider
+            {
+                Minimum = 0, Maximum = 170,
+                Value = ViewModel.GetChannelDelay(channel),
+                Tag = channel, StepFrequency = 1
+            };
             delaySlider.ValueChanged += OnDelaySliderChanged;
-            Grid.SetColumn(delaySlider, 2);
-            delayGrid.Children.Add(delaySlider);
+            delaySlider.RightTapped += (s, e) =>
+            {
+                e.Handled = true;
+                if (s is Slider sl && sl.Tag is Channel ch)
+                { ViewModel.SetDelay((int)ch.Id, 0); sl.Value = 0; }
+            };
+            Grid.SetColumn(delaySlider, 0);
+            delaySliderRow.Children.Add(delaySlider);
+            _currentDelaySlider = delaySlider;
 
-            var delayValuePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            var delayTextBox = new TextBox { Width = 50, Text = ViewModel.GetChannelDelay(channel).ToString("F0"), Tag = channel };
+            var delayValuePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+            var delayTextBox = new TextBox
+            {
+                Tag = channel, Width = 34,
+                Text = ViewModel.GetChannelDelay(channel).ToString("F0"),
+                FontSize = 13,
+                FontFamily = new FontFamily("Cascadia Code, Consolas"),
+                Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
+            };
             delayTextBox.TextChanged += OnDelayTextChanged;
+            delayTextBox.KeyDown += (s, e) =>
+            {
+                if (e.Key == Windows.System.VirtualKey.Enter)
+                {
+                    e.Handled = true;
+                    // Move focus to hidden sink to clear selection and cursor
+                    FocusSink.Focus(FocusState.Programmatic);
+                }
+            };
             delayValuePanel.Children.Add(delayTextBox);
-            delayValuePanel.Children.Add(new TextBlock { Text = "ms", VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Colors.Gray) });
-            Grid.SetColumn(delayValuePanel, 3);
-            delayGrid.Children.Add(delayValuePanel);
+            delayValuePanel.Children.Add(new TextBlock { Text = "ms", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Foreground = unitBrush });
+            Grid.SetColumn(delayValuePanel, 1);
+            delaySliderRow.Children.Add(delayValuePanel);
+            _currentDelayTextBox = delayTextBox;
 
-            delayPanel.Child = delayGrid;
-            ChannelEditorPanel.Children.Add(delayPanel);
+            delaySection.Children.Add(delaySliderRow);
+            Grid.SetColumn(delaySection, 2);
+            cardGrid.Children.Add(delaySection);
+
+            // Vertical separator (col 3)
+            var muteSeparator = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Width = 1, VerticalAlignment = VerticalAlignment.Stretch
+            };
+            Grid.SetColumn(muteSeparator, 3);
+            cardGrid.Children.Add(muteSeparator);
+
+            // ── Mute icon (col 4) ──
+            var muteBtn = new ToggleButton
+            {
+                Tag = channel, IsChecked = isMuted,
+                Padding = new Thickness(8),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0)
+            };
+            muteBtn.Content = new FontIcon
+            {
+                Glyph = isMuted ? "\uE74F" : "\uE767",
+                FontSize = 16,
+                Foreground = isMuted
+                    ? new SolidColorBrush(Color.FromArgb(255, 80, 80, 80))
+                    : new SolidColorBrush(Color.FromArgb(200, 200, 200, 200))
+            };
+            muteBtn.Click += OnMuteToggleClick;
+            Grid.SetColumn(muteBtn, 4);
+            cardGrid.Children.Add(muteBtn);
+
+            outputCard.Child = cardGrid;
+            ChannelEditorPanel.Children.Add(outputCard);
         }
 
         // Filter rows
@@ -675,9 +841,9 @@ public sealed partial class MainWindow : Window
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) }); // Freq
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) }); // Q
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(54) }); // Gain
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnSpacing = 12;
 
@@ -707,7 +873,7 @@ public sealed partial class MainWindow : Window
         // Frequency
         if (p.Type != FilterType.Flat)
         {
-            var freqPanel = CreateValueField("Hz", p.Frequency, 70, (channel, bandIndex, "freq"));
+            var freqPanel = CreateValueField("Hz", p.Frequency, 58, (channel, bandIndex, "freq"));
             Grid.SetColumn(freqPanel, 2);
             grid.Children.Add(freqPanel);
         }
@@ -715,7 +881,7 @@ public sealed partial class MainWindow : Window
         // Q (only for peaking)
         if (p.Type == FilterType.Peaking)
         {
-            var qPanel = CreateValueField("Q", p.Q, 50, (channel, bandIndex, "q"));
+            var qPanel = CreateValueField("Q", p.Q, 34, (channel, bandIndex, "q"));
             Grid.SetColumn(qPanel, 3);
             grid.Children.Add(qPanel);
         }
@@ -723,7 +889,7 @@ public sealed partial class MainWindow : Window
         // Gain (for peaking, low shelf, high shelf)
         if (p.Type.HasGain())
         {
-            var gainPanel = CreateValueField("dB", p.Gain, 50, (channel, bandIndex, "gain"));
+            var gainPanel = CreateValueField("dB", p.Gain, 40, (channel, bandIndex, "gain"));
             Grid.SetColumn(gainPanel, 4);
             grid.Children.Add(gainPanel);
         }
@@ -734,20 +900,26 @@ public sealed partial class MainWindow : Window
 
     private StackPanel CreateValueField(string label, float value, double width, (Channel channel, int band, string param) tag)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
 
         var textBox = new TextBox
         {
             Width = width,
             Text = value.ToString("F1"),
-            Tag = tag
+            Tag = tag,
+            FontSize = 13,
+            FontFamily = new FontFamily("Cascadia Code, Consolas"),
+            Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
         };
         textBox.LostFocus += OnFilterValueChanged;
         textBox.KeyDown += (s, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Enter)
             {
+                e.Handled = true;
                 OnFilterValueChanged(s, null!);
+                // Move focus to hidden sink to clear selection and cursor
+                FocusSink.Focus(FocusState.Programmatic);
             }
         };
 
@@ -755,7 +927,7 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 12,
+            FontSize = 10,
             Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"],
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -826,6 +998,18 @@ public sealed partial class MainWindow : Window
         MeterOutL.Level = status.Peaks[2];
         MeterOutR.Level = status.Peaks[3];
         MeterSub.Level = status.Peaks[4];
+
+        // Dim output meters when muted
+        bool outLMuted = ViewModel.GetChannelMute(Channel.OutLeft);
+        bool outRMuted = ViewModel.GetChannelMute(Channel.OutRight);
+        bool subMuted = ViewModel.GetChannelMute(Channel.Sub);
+
+        MeterOutL.Opacity = outLMuted ? 0.3 : 1.0;
+        MeterOutLLabel.Opacity = outLMuted ? 0.3 : 1.0;
+        MeterOutR.Opacity = outRMuted ? 0.3 : 1.0;
+        MeterOutRLabel.Opacity = outRMuted ? 0.3 : 1.0;
+        MeterSub.Opacity = subMuted ? 0.3 : 1.0;
+        MeterSubLabel.Opacity = subMuted ? 0.3 : 1.0;
 
         // Workaround: firmware reports 100% for Core 1 when idle/no audio
         // Treat 0%/100% as uninitialized and show 0% for both
@@ -909,7 +1093,13 @@ public sealed partial class MainWindow : Window
         if (_isUpdatingDelay) return;
         if (sender is Slider slider && slider.Tag is Channel channel)
         {
+            _isUpdatingDelay = true;
             ViewModel.SetDelay((int)channel.Id, (float)e.NewValue);
+            if (_currentDelayTextBox != null)
+            {
+                _currentDelayTextBox.Text = e.NewValue.ToString("F0");
+            }
+            _isUpdatingDelay = false;
         }
     }
 
@@ -921,8 +1111,65 @@ public sealed partial class MainWindow : Window
             if (float.TryParse(textBox.Text, out float value))
             {
                 _isUpdatingDelay = true;
-                ViewModel.SetDelay((int)channel.Id, Math.Clamp(value, 0, 170));
+                value = Math.Clamp(value, 0, 170);
+                ViewModel.SetDelay((int)channel.Id, value);
+                if (_currentDelaySlider != null)
+                {
+                    _currentDelaySlider.Value = value;
+                }
                 _isUpdatingDelay = false;
+            }
+        }
+    }
+
+    private void OnGainSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_isUpdatingGain) return;
+        if (sender is Slider slider && slider.Tag is Channel channel)
+        {
+            _isUpdatingGain = true;
+            ViewModel.SetChannelGain((int)channel.Id, (float)e.NewValue);
+            if (_currentGainTextBox != null)
+            {
+                _currentGainTextBox.Text = e.NewValue.ToString("F1");
+            }
+            _isUpdatingGain = false;
+        }
+    }
+
+    private void OnGainTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isUpdatingGain) return;
+        if (sender is TextBox textBox && textBox.Tag is Channel channel)
+        {
+            if (float.TryParse(textBox.Text, out float value))
+            {
+                _isUpdatingGain = true;
+                value = Math.Clamp(value, -60, 10);
+                ViewModel.SetChannelGain((int)channel.Id, value);
+                if (_currentGainSlider != null)
+                {
+                    _currentGainSlider.Value = value;
+                }
+                _isUpdatingGain = false;
+            }
+        }
+    }
+
+    private void OnMuteToggleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton btn && btn.Tag is Channel channel)
+        {
+            bool muted = btn.IsChecked == true;
+            ViewModel.SetChannelMute((int)channel.Id, muted);
+
+            // Update icon appearance
+            if (btn.Content is FontIcon icon)
+            {
+                icon.Glyph = muted ? "\uE74F" : "\uE767";
+                icon.Foreground = muted
+                    ? new SolidColorBrush(Color.FromArgb(255, 80, 80, 80))
+                    : new SolidColorBrush(Color.FromArgb(200, 200, 200, 200));
             }
         }
     }
@@ -1124,6 +1371,100 @@ public sealed partial class MainWindow : Window
             XamlRoot = Content.XamlRoot
         };
         await dialog.ShowAsync();
+    }
+
+    private void OnLoudnessClick(object sender, RoutedEventArgs e)
+    {
+        if (_loudnessWindow == null)
+        {
+            _loudnessWindow = new LoudnessWindow(ViewModel);
+            _loudnessWindow.Closed += (s, e) => _loudnessWindow = null;
+        }
+        _loudnessWindow.Activate();
+    }
+
+    private void OnStatsClick(object sender, RoutedEventArgs e)
+    {
+        if (_statsWindow == null)
+        {
+            _statsWindow = new StatsWindow(ViewModel.Device);
+            _statsWindow.Closed += (s, e) => _statsWindow = null;
+        }
+        _statsWindow.Activate();
+    }
+
+    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsDialog { XamlRoot = Content.XamlRoot };
+        await dialog.ShowAsync();
+    }
+
+    private async void OnAutoEQUpdateClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Update AutoEQ Database",
+            Content = "Choose how to update the AutoEQ database:",
+            PrimaryButtonText = "Import File",
+            SecondaryButtonText = "Reset to Built-in",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            // Import file
+            var picker = new FileOpenPicker();
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".json");
+
+            var hwnd = WindowNative.GetWindowHandle(this);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                try
+                {
+                    var json = await Windows.Storage.FileIO.ReadTextAsync(file);
+                    // Validate by attempting to deserialize
+                    var testParse = System.Text.Json.JsonSerializer.Deserialize<AutoEQDatabase>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (testParse?.Entries == null || testParse.Entries.Count == 0)
+                    {
+                        await ShowErrorDialog("Invalid database file: no entries found.");
+                        return;
+                    }
+
+                    var appDataPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSPiConsole");
+                    Directory.CreateDirectory(appDataPath);
+                    var destPath = System.IO.Path.Combine(appDataPath, "autoeq_database.json");
+                    File.WriteAllText(destPath, json);
+
+                    AutoEQManager.Instance.LoadFromJson(json);
+                    RefreshAutoEQFavoritesMenu();
+                    await ShowSuccessDialog($"Database imported: {testParse.Entries.Count} entries loaded.");
+                }
+                catch (Exception ex)
+                {
+                    await ShowErrorDialog($"Failed to import database: {ex.Message}");
+                }
+            }
+        }
+        else if (result == ContentDialogResult.Secondary)
+        {
+            // Reset to built-in
+            var appDataPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSPiConsole");
+            var userDbPath = System.IO.Path.Combine(appDataPath, "autoeq_database.json");
+            if (File.Exists(userDbPath))
+            {
+                File.Delete(userDbPath);
+            }
+            await AutoEQManager.Instance.LoadDatabaseAsync();
+            RefreshAutoEQFavoritesMenu();
+            await ShowSuccessDialog("Database reset to built-in version.");
+        }
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e)

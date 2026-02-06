@@ -49,15 +49,15 @@ public class Channel
 
     public static readonly Channel OutLeft = new(
         ChannelId.OutLeft, "Out L", "OL", "SPDIF",
-        2, true, Color.FromArgb(255, 69, 194, 163)); // Teal
+        10, true, Color.FromArgb(255, 69, 194, 163)); // Teal
 
     public static readonly Channel OutRight = new(
         ChannelId.OutRight, "Out R", "OR", "SPDIF",
-        2, true, Color.FromArgb(255, 240, 196, 89)); // Yellow
+        10, true, Color.FromArgb(255, 240, 196, 89)); // Yellow
 
     public static readonly Channel Sub = new(
         ChannelId.Sub, "Sub", "SUB", "PDM (Pin 10)",
-        2, true, Color.FromArgb(255, 186, 135, 243)); // Purple
+        10, true, Color.FromArgb(255, 186, 135, 243)); // Purple
 
     public static IReadOnlyList<Channel> All { get; } = new[]
     {

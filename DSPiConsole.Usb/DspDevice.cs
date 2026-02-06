@@ -25,6 +25,16 @@ public static class VendorCommands
     public const byte SaveParams = 0x51;
     public const byte LoadParams = 0x52;
     public const byte FactoryReset = 0x53;
+    public const byte SetChannelGain = 0x54;
+    public const byte GetChannelGain = 0x55;
+    public const byte SetChannelMute = 0x56;
+    public const byte GetChannelMute = 0x57;
+    public const byte SetLoudnessEnabled = 0x58;
+    public const byte GetLoudnessEnabled = 0x59;
+    public const byte SetLoudnessRefSPL = 0x5A;
+    public const byte GetLoudnessRefSPL = 0x5B;
+    public const byte SetLoudnessIntensity = 0x5C;
+    public const byte GetLoudnessIntensity = 0x5D;
 }
 
 /// <summary>
@@ -556,6 +566,119 @@ public partial class DspDevice : ObservableObject, IDisposable
     {
         var response = ControlTransferIn(VendorCommands.FactoryReset, 0, 1);
         return response != null && response.Length >= 1 ? response[0] : FlashResult.ErrWrite;
+    }
+
+    /// <summary>
+    /// Set output channel gain in dB. wValue = output index (0=OutL, 1=OutR, 2=Sub).
+    /// </summary>
+    public bool SetChannelGain(int outputChannel, float db)
+    {
+        var data = BitConverter.GetBytes(db);
+        return ControlTransferOut(VendorCommands.SetChannelGain, (ushort)outputChannel, data);
+    }
+
+    /// <summary>
+    /// Get output channel gain in dB. wValue = output index (0=OutL, 1=OutR, 2=Sub).
+    /// </summary>
+    public float? GetChannelGain(int outputChannel)
+    {
+        var response = ControlTransferIn(VendorCommands.GetChannelGain, (ushort)outputChannel, 4);
+        if (response == null || response.Length < 4) return null;
+        return BitConverter.ToSingle(response, 0);
+    }
+
+    /// <summary>
+    /// Set output channel mute state. wValue = output index (0=OutL, 1=OutR, 2=Sub).
+    /// </summary>
+    public bool SetChannelMute(int outputChannel, bool muted)
+    {
+        return ControlTransferOut(VendorCommands.SetChannelMute, (ushort)outputChannel, new[] { (byte)(muted ? 1 : 0) });
+    }
+
+    /// <summary>
+    /// Get output channel mute state. wValue = output index (0=OutL, 1=OutR, 2=Sub).
+    /// </summary>
+    public bool? GetChannelMute(int outputChannel)
+    {
+        var response = ControlTransferIn(VendorCommands.GetChannelMute, (ushort)outputChannel, 1);
+        if (response == null || response.Length < 1) return null;
+        return response[0] != 0;
+    }
+
+    /// <summary>
+    /// Set loudness compensation enabled state.
+    /// </summary>
+    public bool SetLoudnessEnabled(bool enabled)
+    {
+        return ControlTransferOut(VendorCommands.SetLoudnessEnabled, 0, new[] { (byte)(enabled ? 1 : 0) });
+    }
+
+    /// <summary>
+    /// Get loudness compensation enabled state.
+    /// </summary>
+    public bool? GetLoudnessEnabled()
+    {
+        var response = ControlTransferIn(VendorCommands.GetLoudnessEnabled, 0, 1);
+        if (response == null || response.Length < 1) return null;
+        return response[0] != 0;
+    }
+
+    /// <summary>
+    /// Set loudness reference SPL (40-100 dB, default 83).
+    /// </summary>
+    public bool SetLoudnessRefSPL(float spl)
+    {
+        var data = BitConverter.GetBytes(spl);
+        return ControlTransferOut(VendorCommands.SetLoudnessRefSPL, 0, data);
+    }
+
+    /// <summary>
+    /// Get loudness reference SPL.
+    /// </summary>
+    public float? GetLoudnessRefSPL()
+    {
+        var response = ControlTransferIn(VendorCommands.GetLoudnessRefSPL, 0, 4);
+        if (response == null || response.Length < 4) return null;
+        return BitConverter.ToSingle(response, 0);
+    }
+
+    /// <summary>
+    /// Set loudness intensity (0-200%, default 100).
+    /// </summary>
+    public bool SetLoudnessIntensity(float intensity)
+    {
+        var data = BitConverter.GetBytes(intensity);
+        return ControlTransferOut(VendorCommands.SetLoudnessIntensity, 0, data);
+    }
+
+    /// <summary>
+    /// Get loudness intensity.
+    /// </summary>
+    public float? GetLoudnessIntensity()
+    {
+        var response = ControlTransferIn(VendorCommands.GetLoudnessIntensity, 0, 4);
+        if (response == null || response.Length < 4) return null;
+        return BitConverter.ToSingle(response, 0);
+    }
+
+    /// <summary>
+    /// Get a 4-byte unsigned status value. wValue selects the stat type.
+    /// </summary>
+    public uint? GetStatusUInt32(ushort wValue)
+    {
+        var response = ControlTransferIn(VendorCommands.GetStatus, wValue, 4);
+        if (response == null || response.Length < 4) return null;
+        return BitConverter.ToUInt32(response, 0);
+    }
+
+    /// <summary>
+    /// Get a 4-byte signed status value. wValue selects the stat type.
+    /// </summary>
+    public int? GetStatusInt32(ushort wValue)
+    {
+        var response = ControlTransferIn(VendorCommands.GetStatus, wValue, 4);
+        if (response == null || response.Length < 4) return null;
+        return BitConverter.ToInt32(response, 0);
     }
 
     #endregion

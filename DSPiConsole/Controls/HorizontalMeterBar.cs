@@ -14,6 +14,9 @@ public sealed class HorizontalMeterBar : UserControl
 {
     private readonly Border _background;
     private readonly Border _foreground;
+    private readonly DispatcherTimer _smoothingTimer;
+    private double _currentLevel;
+    private double _targetLevel;
 
     public static readonly DependencyProperty LevelProperty =
         DependencyProperty.Register(nameof(Level), typeof(double), typeof(HorizontalMeterBar),
@@ -38,7 +41,7 @@ public sealed class HorizontalMeterBar : UserControl
     public HorizontalMeterBar()
     {
         Height = 8;
-        
+
         var grid = new Grid();
 
         _background = new Border
@@ -60,13 +63,21 @@ public sealed class HorizontalMeterBar : UserControl
         Content = grid;
 
         SizeChanged += (s, e) => UpdateMeterWidth();
+
+        // Smoothing timer at ~60fps
+        _smoothingTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(16)
+        };
+        _smoothingTimer.Tick += OnSmoothingTick;
+        _smoothingTimer.Start();
     }
 
     private static void OnLevelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is HorizontalMeterBar meter)
         {
-            meter.UpdateMeterWidth();
+            meter._targetLevel = (double)e.NewValue;
         }
     }
 
@@ -78,9 +89,34 @@ public sealed class HorizontalMeterBar : UserControl
         }
     }
 
+    private void OnSmoothingTick(object? sender, object e)
+    {
+        // Lerp towards target with different speeds for attack and decay
+        double diff = _targetLevel - _currentLevel;
+
+        if (diff > 0)
+        {
+            // Attack (rising) - faster response
+            _currentLevel += diff * 0.4;
+        }
+        else
+        {
+            // Decay (falling) - slower response for smoother falloff
+            _currentLevel += diff * 0.15;
+        }
+
+        // Snap to target if very close
+        if (Math.Abs(diff) < 0.001)
+        {
+            _currentLevel = _targetLevel;
+        }
+
+        UpdateMeterWidth();
+    }
+
     private void UpdateMeterWidth()
     {
-        double level = Math.Max(0, Math.Min(1, Level));
+        double level = Math.Max(0, Math.Min(1, _currentLevel));
         _foreground.Width = ActualWidth * level;
     }
 }

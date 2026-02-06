@@ -1,0 +1,61 @@
+<ContentDialog
+    x:Class="DSPiConsole.SettingsDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Settings"
+    PrimaryButtonText="Save"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary">
+
+    <StackPanel Spacing="16" MinWidth="350">
+        <!-- Appearance -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="APPEARANCE" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <ToggleSwitch x:Name="GlowToggle" Header="Graph Glow Effect" OnContent="On" OffContent="Off"/>
+        </StackPanel>
+
+        <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+        <!-- Graphing -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="GRAPHING" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Line Width" FontSize="12"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Slider x:Name="LineWidthSlider" Minimum="1" Maximum="4" StepFrequency="0.5"/>
+                    <TextBlock Grid.Column="1" x:Name="LineWidthText" FontFamily="Cascadia Code, Consolas"
+                               FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" Width="30"/>
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Animation Speed" FontSize="12"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Slider x:Name="AnimSpeedSlider" Minimum="0.05" Maximum="0.5" StepFrequency="0.05"/>
+                    <TextBlock Grid.Column="1" x:Name="AnimSpeedText" FontFamily="Cascadia Code, Consolas"
+                               FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" Width="30"/>
+                </Grid>
+            </StackPanel>
+        </StackPanel>
+
+        <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+        <!-- Advanced -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="ADVANCED" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <ToggleSwitch x:Name="DebugToggle" Header="Show Debug Info" OnContent="On" OffContent="Off"/>
+        </StackPanel>
+    </StackPanel>
+</ContentDialog>

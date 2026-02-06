@@ -2,6 +2,8 @@
 
 A WinUI 3 control application for the RP2040-based DSPi audio processor. This is a Windows port of the original macOS Swift application, now at full feature parity.
 
+![Screenshot](Images/screenshot.png)
+
 ## Features
 
 ### DSP Control
