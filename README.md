@@ -2,16 +2,14 @@
 
 A WinUI 3 control application for the RP2040-based DSPi audio processor. This is a Windows port of the original macOS Swift application, now at full feature parity.
 
-![Screenshot](Images/screenshot.png)
-
 ## Features
 
 ### DSP Control
 - **Parametric EQ**: Up to 10 bands per channel with real-time coefficient updates
 - **5 Audio Channels**:
   - Master L/R (USB inputs) - 10 EQ bands each
-  - Out L/R (SPDIF outputs) - 2 EQ bands each
-  - Sub (PDM output) - 2 EQ bands
+  - Out L/R (SPDIF outputs) - 10 EQ bands each
+  - Sub (PDM output) - 10 EQ bands
 - **Filter Types**: Off, Peaking, Low Shelf, High Shelf, Low Pass, High Pass
 - **Per-Channel Delay**: 0-170ms delay for output channels (Sub and SPDIF)
 - **Global Controls**: Preamp gain (-60 to +10 dB), Master EQ bypass
