@@ -56,9 +56,10 @@ public sealed partial class MatrixMixerWindow : Window
 
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
+        var appWindow = AppWindow.GetFromWindowId(windowId) ??
+            throw new InvalidOperationException("Failed to retrieve AppWindow");
 
-        appWindow!.Title = "Matrix Mixer";
+        appWindow.Title = "Matrix Mixer";
 
         // Start at a minimal size so the later ResizeToContent expands rather
         // than shrinking from the OS default — avoids a visible flash.
