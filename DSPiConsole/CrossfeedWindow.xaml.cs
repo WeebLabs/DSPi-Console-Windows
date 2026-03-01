@@ -44,9 +44,10 @@ public sealed partial class CrossfeedWindow : Window
         // Set window size and dark titlebar (380x560)
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow?.Resize(new Windows.Graphics.SizeInt32(380, 560));
-        appWindow!.Title = "Crossfeed";
+        var appWindow = AppWindow.GetFromWindowId(windowId) ??
+            throw new InvalidOperationException("AppWindow not available");
+        appWindow.Resize(new Windows.Graphics.SizeInt32(380, 560));
+        appWindow.Title = "Crossfeed";
 
         if (appWindow.TitleBar is { } titleBar)
         {
