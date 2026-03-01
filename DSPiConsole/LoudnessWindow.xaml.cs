@@ -28,9 +28,10 @@ public sealed partial class LoudnessWindow : Window
         // Set window size and dark titlebar
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow?.Resize(new Windows.Graphics.SizeInt32(400, 600));
-        appWindow!.Title = "Loudness Compensation";
+        var appWindow = AppWindow.GetFromWindowId(windowId) ??
+            throw new InvalidOperationException("AppWindow not available");
+        appWindow.Resize(new Windows.Graphics.SizeInt32(400, 600));
+        appWindow.Title = "Loudness Compensation";
 
         if (appWindow.TitleBar is { } titleBar)
         {
