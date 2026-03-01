@@ -20,9 +20,10 @@ public sealed partial class StatsWindow : Window
         // Set window size
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow?.Resize(new Windows.Graphics.SizeInt32(400, 800));
-        appWindow!.Title = "Stats for nerbs";
+        var appWindow = AppWindow.GetFromWindowId(windowId) ??
+            throw new InvalidOperationException("Failed to retrieve AppWindow");
+        appWindow.Resize(new Windows.Graphics.SizeInt32(400, 800));
+        appWindow.Title = "Stats for nerbs";
 
         if (appWindow.TitleBar is { } titleBar)
         {
