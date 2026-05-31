@@ -61,7 +61,7 @@ public partial class StatsViewModel : ObservableObject, IDisposable
         _device = device;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
 
-        _pollTimer = new System.Timers.Timer(2000);
+        _pollTimer = new System.Timers.Timer(_device.IsDeviceUsb ? 60 : 2000);
         _pollTimer.Elapsed += (_, _) => PollStats();
         _pollTimer.AutoReset = true;
         _pollTimer.Start();

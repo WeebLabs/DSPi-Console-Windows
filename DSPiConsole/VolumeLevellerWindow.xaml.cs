@@ -143,7 +143,7 @@ public sealed partial class VolumeLevellerWindow : Window
     private void OnSpeedChanged(object sender, RoutedEventArgs e)
     {
         if (_isUpdating) return;
-        int speed = sender == SpeedSlow ? 0 : sender == SpeedMedium ? 1 : 2;
+        int speed = ReferenceEquals(sender, SpeedSlow) ? 0 : ReferenceEquals(sender, SpeedMedium) ? 1 : 2;
         _viewModel.LevellerSpeed = speed;
         UpdateSpeedDescription(speed);
     }

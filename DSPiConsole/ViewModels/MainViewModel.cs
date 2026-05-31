@@ -263,6 +263,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private DSPiDeviceInfo? _selectedDeviceItem;
 
+    [ObservableProperty]
     private bool _isSwitchingDevice;
 
     /// <summary>Callback for showing unsaved changes dialog. Registered by MainWindow.</summary>
@@ -649,8 +650,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             });
         };
 
-        // Status polling timer (60ms interval)
-        _pollTimer = new System.Timers.Timer(60);
+        // Status polling timer (60ms interval if USB or 3000ms if remote)
+        _pollTimer = new System.Timers.Timer(_device.IsDeviceUsb ? 60 : 3000);
         _pollTimer.Elapsed += (s, e) =>
         {
             if (IsDeviceConnected)
@@ -696,9 +697,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     break;
                 case UnsavedAction.Cancel:
                     // Revert selection in UI
-                    _isSwitchingDevice = true;
+                    IsSwitchingDevice = true;
                     SelectedDeviceItem = _device.SelectedDeviceInfo;
-                    _isSwitchingDevice = false;
+                    IsSwitchingDevice = false;
                     return;
             }
         }
@@ -738,7 +739,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (channel != null)
         {
             // When linked and a master channel is selected, show both Master L and R
-            bool showBothMasters = _masterPeqLinked && IsMasterChannel((int)channel.Id);
+            bool showBothMasters = MasterPeqLinked && IsMasterChannel((int)channel.Id);
 
             foreach (var ch in Channel.All)
             {
@@ -1391,7 +1392,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var success = await Task.Run(() => _device.SetFilter(channel, band, p));
 
         // Mirror to linked master channel
-        if (_masterPeqLinked && IsMasterChannel(channel))
+        if (MasterPeqLinked && IsMasterChannel(channel))
         {
             int other = GetLinkedMasterChannel(channel);
             if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
@@ -1416,7 +1417,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             filters[band] = p;
 
         // Mirror to linked master channel (local state)
-        if (_masterPeqLinked && IsMasterChannel(channel))
+        if (MasterPeqLinked && IsMasterChannel(channel))
         {
             int other = GetLinkedMasterChannel(channel);
             if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
@@ -1435,7 +1436,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 await Task.Delay(500, token);
                 _device.SetFilter(channel, band, p);
-                if (_masterPeqLinked && IsMasterChannel(channel))
+                if (MasterPeqLinked && IsMasterChannel(channel))
                     _device.SetFilter(GetLinkedMasterChannel(channel), band, p);
             }
             catch (TaskCanceledException) { }
@@ -1866,7 +1867,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var rounded = MathF.Round(value, 1);
         Task.Run(() => _device.SetInputPreamp(0, rounded));
-        if (_masterPeqLinked && Math.Abs(InputPreampRDb - rounded) > 0.05f)
+        if (MasterPeqLinked && Math.Abs(InputPreampRDb - rounded) > 0.05f)
             InputPreampRDb = rounded;
         CheckDirty();
     }
@@ -1875,7 +1876,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var rounded = MathF.Round(value, 1);
         Task.Run(() => _device.SetInputPreamp(1, rounded));
-        if (_masterPeqLinked && Math.Abs(InputPreampLDb - rounded) > 0.05f)
+        if (MasterPeqLinked && Math.Abs(InputPreampLDb - rounded) > 0.05f)
             InputPreampLDb = rounded;
         CheckDirty();
     }
@@ -2267,7 +2268,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var success = await Task.Run(() => _device.SetBandBypass(channel, band, bypass));
 
-        if (_masterPeqLinked && IsMasterChannel(channel))
+        if (MasterPeqLinked && IsMasterChannel(channel))
         {
             int other = GetLinkedMasterChannel(channel);
             if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
