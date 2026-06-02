@@ -1,8 +1,30 @@
-# DSPi Console for Windows
+# DSPi Console for Windows -- Remote Fork
+
+This fork of the Weeb labs DSPi project Windows Console allows the <span style="color: #2ECC71;">**console to attach to a remote instance**</span>
+of my DSPiCliServer application and run the gui as if that were the local DSPi Pico. 
+
+## Usage
+If a -r argument is provided, the console will attempt to connect to the specified remote DSPiCliRemote instance
+and use it as the DSPi Pico. If no -r argument is provided, the console will behave as a local DSPiConsole application.
+
+To use the console remotely, first ensure that DSPiCliServer is running on the remote device. Go to the DSPiCliRemote 
+repository and get the latest release then follow the installation instructions. I usually run it by just running a
+console (terminal) and running it manually. For more permanent installations I set DSPiCliServer to run at system startup.
+
+Once DSPiCliServer is running, swap to your Windows PC. From there 
+you can start the DSPiConsole application with the -r argument to connect to the remote instance.
+
+Run this like the usual Windows DSPiConsole application but with 1 or 2 optional arguments:
+
+C:\ DSPiConsole -r myremoteip -p myremoteport
+
+## ====================================================================
+
+### DSPi Console for Windows
 
 A WinUI 3 control application for the DSPi audio processor. Supports both RP2040 and RP2350 platforms.
 
-![Screenshot](Images/screenshot.png)
+ScreenShot... (elided)
 
 ## Features
 
