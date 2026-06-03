@@ -51,7 +51,8 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
     private void OnDbRangeChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
         UpdateRangeDescription(e.NewValue);
-        UpdateCenterDescription(DbCenterSlider.Value, e.NewValue);
+        if(DbCenterSlider != null)
+            UpdateCenterDescription(DbCenterSlider.Value, e.NewValue);
         Commit(() => AppSettings.Instance.GraphDbRange = e.NewValue);
     }
 
