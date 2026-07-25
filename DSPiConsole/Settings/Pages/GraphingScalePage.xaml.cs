@@ -50,6 +50,11 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
 
     private void OnDbRangeChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        // ValueChanged fires during InitializeComponent — setting Minimum="10"
+        // in XAML coerces Value off its 0 default — before the sibling elements
+        // below this slider (DbCenterSlider/DbCenterCard) have been created.
+        // Bail out until the page is fully built to avoid a NullReferenceException.
+        if (DbCenterSlider is null || DbCenterCard is null || DbRangeCard is null) return;
         UpdateRangeDescription(e.NewValue);
         UpdateCenterDescription(DbCenterSlider.Value, e.NewValue);
         Commit(() => AppSettings.Instance.GraphDbRange = e.NewValue);
@@ -57,6 +62,7 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
 
     private void OnDbCenterChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        if (DbRangeSlider is null || DbCenterCard is null) return;
         UpdateCenterDescription(e.NewValue, DbRangeSlider.Value);
         Commit(() => AppSettings.Instance.GraphDbCenter = e.NewValue);
     }
