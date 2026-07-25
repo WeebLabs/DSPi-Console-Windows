@@ -727,6 +727,16 @@ public partial class DspDevice : ObservableObject, IDisposable
         return (0, 0);
     }
 
+    // Guards ScanDevices against re-entrancy. The scan runs on a 500 ms
+    // auto-reset timer, but enumerating and opening a device (list + clone +
+    // open + claim + read serial) can take longer than that interval. Without
+    // this guard the timer re-enters ScanDevices on another thread-pool thread
+    // while a previous scan is still mid-open; the overlapping scans each call
+    // OpenDevice, which tears down any existing connection at entry, so they
+    // repeatedly disconnect the device the previous scan just opened — leaving
+    // it perpetually reconnecting and leaking scan threads.
+    private int _scanActive;
+
     /// <summary>
     /// Scan for all connected DSPi devices, update the available list,
     /// and auto-select/reconnect as needed.
@@ -734,6 +744,10 @@ public partial class DspDevice : ObservableObject, IDisposable
     private void ScanDevices()
     {
         if (_disposed) return;
+
+        // Only one scan at a time (see _scanActive).
+        if (System.Threading.Interlocked.CompareExchange(ref _scanActive, 1, 0) != 0)
+            return;
 
         try
         {
@@ -837,6 +851,10 @@ public partial class DspDevice : ObservableObject, IDisposable
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"ScanDevices error: {ex.Message}");
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _scanActive, 0);
         }
     }
 
