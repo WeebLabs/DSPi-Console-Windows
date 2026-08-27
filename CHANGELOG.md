@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-27
+
+### On-Graph Filter Editing
+- PEQ and crossover bands of the selected channel now appear as draggable handles directly on the response graph (numbered circles for PEQ, diamonds for crossovers), in both the main graph and the pop-out
+- Drag a handle to set frequency and gain (frequency only for cuts/notch/all-pass and crossovers); the curve and the device track the drag live
+- Shift+drag for fine adjustment, Ctrl+drag to lock to the dominant axis
+- Mouse wheel over a handle adjusts Q (Shift = fine); on a crossover handle it steps the slope through the family's orders
+- Alt+click toggles band bypass; bypassed bands render as hollow handles
+- Hovering or selecting a band shows its isolated response curve with a soft fill, plus a readout chip (frequency · gain · Q)
+- Double-click empty graph space to add a Peaking band at the pointer; double-click or right-click a handle for a compact editor flyout (type/family, values, bypass, remove)
+- Delete removes the selected band, Esc deselects
+- Selecting a crossover handle automatically flips the band list to the XO page (and vice versa)
+- Toggleable via Settings → Graphing → Style → "Edit filters on the graph" (on by default)
+
 ## 2026-03-22
 
 ### Sidebar Redesign

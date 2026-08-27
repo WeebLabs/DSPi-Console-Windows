@@ -14,7 +14,7 @@ namespace DSPiConsole.Controls;
 /// Custom control for rendering Bode plot frequency response curves.
 /// Uses a dual-canvas layout: _plotCanvas (clipped) for grid/curves, _labelCanvas (unclipped) for axis labels.
 /// </summary>
-public sealed class BodePlotControl : UserControl
+public sealed partial class BodePlotControl : UserControl
 {
     private Grid? _rootGrid;
     private Canvas? _plotCanvas;
@@ -36,6 +36,7 @@ public sealed class BodePlotControl : UserControl
     {
         if (_selectedChannelId == channelId) return;
         _selectedChannelId = channelId;
+        ResetEditState();
         Redraw(gridChanged: true);
     }
 
@@ -163,6 +164,8 @@ public sealed class BodePlotControl : UserControl
         _rootGrid.Children.Add(_dbScaleHitArea);
         Content = _rootGrid;
 
+        InitializeEditing();   // on-graph band handles (BodePlotControl.Editing.cs)
+
         _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _animTimer.Tick += OnAnimationTick;
 
@@ -205,6 +208,7 @@ public sealed class BodePlotControl : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        ResetEditState();
         _animTimer.Stop();
         _isAnimating = false;
         if (_viewModel != null)
@@ -220,6 +224,15 @@ public sealed class BodePlotControl : UserControl
 
     private void OnFiltersChanged(object? sender, EventArgs e)
     {
+        // While a handle drag is live the curve must track the pointer 1:1 —
+        // the lerp animation would read as lag — so snap instead of animating.
+        if (_editDragActive)
+        {
+            UpdateTargets();
+            SnapToTargets();
+            Redraw(gridChanged: false);
+            return;
+        }
         UpdateTargets();
         StartAnimation();
     }
@@ -303,6 +316,17 @@ public sealed class BodePlotControl : UserControl
         {
             Rect = new Windows.Foundation.Rect(LeftMargin, TopMargin, plotWidth, plotHeight)
         };
+
+        // The edit overlay draws a band-solo curve over the full 10–20k data
+        // range; clip it to the plot rect like the curves so the fill can't
+        // bleed into the axis label gutters.
+        if (_editCanvas != null)
+        {
+            _editCanvas.Clip = new RectangleGeometry
+            {
+                Rect = new Windows.Foundation.Rect(LeftMargin, TopMargin, plotWidth, plotHeight)
+            };
+        }
     }
 
     private void UpdateTargets()
@@ -513,6 +537,8 @@ public sealed class BodePlotControl : UserControl
         {
             UpdateCurvePoints(plotWidth, plotHeight);
         }
+
+        UpdateEditOverlay(plotWidth, plotHeight);
     }
 
     private void DrawGrid(double plotWidth, double plotHeight)

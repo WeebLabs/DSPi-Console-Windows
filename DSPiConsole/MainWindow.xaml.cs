@@ -188,9 +188,14 @@ public sealed partial class MainWindow : Window
         {
             BodePlot.Invalidate();
             ScheduleDashboardRefresh();
-            if (_selectedChannel != null && !_isScrollAdjusting && !_isUpdatingGain && !_isUpdatingDelay)
+            if (_selectedChannel != null && !_isScrollAdjusting && !_isUpdatingGain && !_isUpdatingDelay
+                && !ViewModel.IsInteractiveFilterEdit)
                 ShowChannelEditor(_selectedChannel);
         };
+        // On-graph edits fire per pointer move; refresh just the touched row and
+        // leave the full rebuild to the drag's committing SetFilter.
+        ViewModel.InteractiveBandEdited += OnInteractiveBandEdited;
+        BodePlot.EditBandSelected += OnGraphEditBandSelected;
         // Bulk refreshes (preset load, factory reset, BULK_INVALIDATED) fire
         // FiltersChanged too, so the 50ms ScheduleDashboardRefresh debounce
         // would otherwise hold the dashboard back ~50ms while the BodePlot
@@ -1930,6 +1935,95 @@ public sealed partial class MainWindow : Window
         // visible while the filter list scrolls. Refresh its content each rebuild.
         FilterStatusBarHost.Child = BuildFilterStatusBar(channel, showXover, xoverAvailable);
         FilterStatusBarHost.Visibility = Visibility.Visible;
+    }
+
+    // ── On-graph editing integration ──
+
+    private DateTime _lastInteractiveRowRefresh = DateTime.MinValue;
+    private (int ChannelId, int Band, bool IsXover)? _pendingRowRefresh;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _rowRefreshTimer;
+
+    /// <summary>
+    /// A live on-graph band edit (drag / wheel on a handle). Replace just that
+    /// band's row so its values track the handle — a full ShowChannelEditor
+    /// rebuild per pointer move would freeze the drag. The authoritative rebuild
+    /// happens when a drag commits through SetFilter with the interactive
+    /// session already ended; wheel edits have no such commit, so a trailing
+    /// timer guarantees the last throttled-out refresh still lands.
+    /// </summary>
+    private void OnInteractiveBandEdited(int channelId, int band, bool isXover)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _lastInteractiveRowRefresh).TotalMilliseconds < 50)
+        {
+            _pendingRowRefresh = (channelId, band, isXover);
+            if (_rowRefreshTimer == null)
+            {
+                _rowRefreshTimer = DispatcherQueue.CreateTimer();
+                _rowRefreshTimer.Interval = TimeSpan.FromMilliseconds(60);
+                _rowRefreshTimer.IsRepeating = false;
+                _rowRefreshTimer.Tick += (_, _) =>
+                {
+                    if (_pendingRowRefresh is { } pend)
+                    {
+                        _pendingRowRefresh = null;
+                        _lastInteractiveRowRefresh = DateTime.UtcNow;
+                        RefreshInteractiveRow(pend.ChannelId, pend.Band, pend.IsXover);
+                    }
+                };
+            }
+            _rowRefreshTimer.Start();
+            return;
+        }
+        _lastInteractiveRowRefresh = now;
+        _pendingRowRefresh = null;
+        RefreshInteractiveRow(channelId, band, isXover);
+    }
+
+    private void RefreshInteractiveRow(int channelId, int band, bool isXover)
+    {
+        if (_selectedChannel == null) return;
+        int selId = (int)_selectedChannel.Id;
+        if (selId != channelId)
+        {
+            // The graph edits the selected channel, so a mismatch can only be the
+            // linked pair partner's mirror; anything else isn't on screen.
+            if (!ViewModel.IsInputPairLinked(channelId) ||
+                MainViewModel.GetLinkedInputChannel(channelId) != selId)
+                return;
+        }
+        if (_filterPageIsXover != isXover) return;
+        if (ChannelEditorPanel.Visibility != Visibility.Visible) return;
+        if (band < 0 || band >= ChannelEditorPanel.Children.Count) return;
+
+        if (isXover)
+        {
+            var xbands = ViewModel.GetXoverFilters(_selectedChannel);
+            if (band >= xbands.Count) return;
+            ChannelEditorPanel.Children[band] = CreateXoverEditorRow(_selectedChannel, band, xbands[band]);
+        }
+        else
+        {
+            var filters = ViewModel.GetFilters(_selectedChannel);
+            if (band >= filters.Count) return;
+            ChannelEditorPanel.Children[band] = CreateFilterEditorRow(_selectedChannel, band, filters[band]);
+        }
+    }
+
+    /// <summary>Selecting a band handle on the graph flips the PEQ|XO filter page
+    /// so the row list below matches the band being edited.</summary>
+    private void OnGraphEditBandSelected(bool isXover)
+    {
+        if (_selectedChannel == null || _filterPageIsXover == isXover) return;
+        if (isXover && !(_selectedChannel.IsOutput && ViewModel.CrossoverSupported)) return;
+        _filterPageIsXover = isXover;
+        var channel = _selectedChannel;
+        // Deferred: the selection lands mid-pointer-event; rebuilding the editor
+        // synchronously inside it risks reentrancy with the drag capture.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_selectedChannel == channel) ShowChannelEditor(channel);
+        });
     }
 
     private Border CreateFilterEditorRow(Channel channel, int bandIndex, FilterParams p)

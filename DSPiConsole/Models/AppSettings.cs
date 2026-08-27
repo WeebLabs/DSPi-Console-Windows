@@ -36,6 +36,10 @@ public class AppSettings
     public bool ShowPhase { get; set; } = false;
     public bool PhaseUnwrapped { get; set; } = false;
 
+    // On-graph filter editing: draggable PEQ/crossover band handles on the
+    // response graph (FabFilter-style). Off = the graph is display-only.
+    public bool GraphEditingEnabled { get; set; } = true;
+
     // Whether the popout graph follows the selected channel editor page
     public bool PopoutFollowsSelectedChannel { get; set; } = true;
 

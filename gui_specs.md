@@ -349,3 +349,18 @@ Edit `CreateChannelListItem()` in `MainWindow.xaml.cs` starting around line 182.
 
 ### To change section header styling:
 Most use `TextFillColorSecondaryBrush` - change the brush definition in `App.xaml` or edit individual elements.
+
+---
+
+## On-Graph Filter Editing (BodePlotControl.Editing.cs)
+
+Draggable band handles on the Bode plot, gated by Settings → Graphing → Style → "Edit filters on the graph" (`AppSettings.GraphEditingEnabled`, default on) and a selected channel.
+
+- **PEQ handles**: 16 px circles, channel-color fill (alpha 235), white stroke (alpha 140, hover/selected 230), band number centered (9 px SemiBold, white or near-black by fill luminance)
+- **Crossover handles**: same metrics as a diamond (rotated-square polygon)
+- **Bypassed band**: hollow handle — transparent fill, channel-color stroke 1.8 px, number in channel color
+- **Selection halo**: ring at handle radius + 5 px, channel color alpha 110, 1.5 px
+- **Band-solo curve** (hover/selected): isolated response, 1.25 px stroke channel color alpha 140, fill to baseline alpha 28; dashed (3,3) with no fill when bypassed
+- **Readout chip**: #F0141418 bg, #28FFFFFF 1 px border, 5 px radius, 8/3/8/4 padding, Cascadia Code 11 px #E8E8EB
+- **Empty hint**: "Double-click to add a band", 11 px, #46FFFFFF, bottom-center of plot
+- Overlay canvas is clipped to the plot rect and hit-test-invisible; input is handled on the control's root grid

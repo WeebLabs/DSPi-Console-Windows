@@ -2057,6 +2057,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task<bool> SetFilter(int channel, int band, FilterParams p)
     {
+        CancelLiveFilterSends();   // this awaited write is authoritative — no stale live write after it
         if (_channelData.TryGetValue(channel, out var filters) && band < filters.Count)
             filters[band] = p;
         var success = await Task.Run(() => _device.SetFilter(channel, band, p));
@@ -2111,6 +2112,150 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             catch (TaskCanceledException) { }
         });
+    }
+
+    // ── Interactive (on-graph) filter editing ──
+    // A drag on the graph edit overlay must repaint at pointer rate, but the
+    // USB bus can't take a write per pointer move. Live edits update the local
+    // model + fire events immediately and hand the wire write to the throttled
+    // sender below rather than SetFilterDeferred's 500 ms trailing debounce,
+    // which would send nothing at all until the drag stopped.
+
+    private int _interactiveEditDepth;
+
+    /// <summary>
+    /// True while the graph edit overlay is mid-drag. The overlay brackets a
+    /// drag with Begin/EndInteractiveFilterEdit so the main window can skip
+    /// full band-editor rebuilds on the flood of FiltersChanged events and
+    /// refresh only the row reported by <see cref="InteractiveBandEdited"/>.
+    /// </summary>
+    public bool IsInteractiveFilterEdit => _interactiveEditDepth > 0;
+
+    public void BeginInteractiveFilterEdit() => _interactiveEditDepth++;
+
+    public void EndInteractiveFilterEdit() => _interactiveEditDepth = Math.Max(0, _interactiveEditDepth - 1);
+
+    /// <summary>
+    /// (channelId, bandIndex, isXover) naming the single band a live edit just
+    /// changed. Raised on the caller's (UI) thread right after FiltersChanged.
+    /// bandIndex is the local band index, never the wire band index.
+    /// </summary>
+    public event Action<int, int, bool>? InteractiveBandEdited;
+
+    // Throttled live sender. _livePending holds the LATEST queued write set;
+    // overwriting it mid-drag is intended — a superseded value is already stale
+    // by the time it could reach the wire. The loop task keeps at most one
+    // write chain in flight and spaces chains at least LiveSendIntervalMs
+    // apart. Because it re-reads _livePending after the delay (and only clears
+    // _liveSendRunning under the same lock that publishes pending work), the
+    // last value queued in a drag is always sent rather than dropped.
+    private const int LiveSendIntervalMs = 70;
+    private readonly object _liveSendLock = new();
+    private List<(int Channel, int WireBand, FilterParams Params)>? _livePending;
+    private bool _liveSendRunning;
+
+    private void QueueLiveSend(List<(int Channel, int WireBand, FilterParams Params)> writes)
+    {
+        lock (_liveSendLock)
+        {
+            _livePending = writes;
+            if (_liveSendRunning)
+                return;                 // the running loop will pick this up
+            _liveSendRunning = true;
+        }
+
+        Task.Run(async () =>
+        {
+            while (true)
+            {
+                List<(int Channel, int WireBand, FilterParams Params)> batch;
+                lock (_liveSendLock)
+                {
+                    if (_livePending is null)
+                    {
+                        _liveSendRunning = false;
+                        return;
+                    }
+                    batch = _livePending;
+                    _livePending = null;
+                }
+
+                foreach (var (ch, wireBand, p) in batch)
+                {
+                    // Swallow per-write faults like the deferred paths do: a
+                    // dropped live frame is superseded by the next one anyway.
+                    try { _device.SetFilter(ch, wireBand, p); } catch { }
+                }
+
+                await Task.Delay(LiveSendIntervalMs);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Discard any live value still waiting to be sent. Called at the top of
+    /// the authoritative SetFilter/SetXoverFilter paths so a throttled write
+    /// queued mid-drag can't land after the awaited final write and re-apply a
+    /// stale value.
+    /// </summary>
+    public void CancelLiveFilterSends()
+    {
+        lock (_liveSendLock)
+            _livePending = null;
+    }
+
+    /// <summary>
+    /// <see cref="SetFilterDeferred"/> with a live send cadence: identical local
+    /// update, mirroring and event behaviour, but the USB write is throttled to
+    /// one per <see cref="LiveSendIntervalMs"/> ms instead of debounced, so the
+    /// device tracks the drag. For PEQ the wire band index equals band.
+    /// </summary>
+    public void SetFilterLive(int channel, int band, FilterParams p)
+    {
+        if (_channelData.TryGetValue(channel, out var filters) && band < filters.Count)
+            filters[band] = p;
+
+        // Mirror to the linked pair partner (local state)
+        int other = -1;
+        if (IsInputPairLinked(channel))
+        {
+            other = GetLinkedInputChannel(channel);
+            if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
+                otherFilters[band] = p;
+        }
+
+        FiltersChanged?.Invoke(this, EventArgs.Empty);
+        CheckDirty();
+        InteractiveBandEdited?.Invoke(channel, band, false);
+
+        // A 500 ms deferred write left over from an earlier wheel-scrub must not
+        // land mid-drag and fight the live sends.
+        _filterDebounceCts?.Cancel();
+
+        var writes = new List<(int, int, FilterParams)> { (channel, band, p) };
+        if (other >= 0)
+            writes.Add((other, band, p));
+        QueueLiveSend(writes);
+    }
+
+    /// <summary>
+    /// Crossover counterpart to <see cref="SetFilterLive"/>: updates the xover
+    /// cache and throttles the USB write to wire band XoverBandBase + localBand.
+    /// No linked-pair mirroring — crossover applies per output driver.
+    /// </summary>
+    public void SetXoverFilterLive(int channel, int localBand, FilterParams p)
+    {
+        if (_xoverData.TryGetValue(channel, out var bands) && localBand < bands.Count)
+            bands[localBand] = p;
+
+        FiltersChanged?.Invoke(this, EventArgs.Empty);
+        CheckDirty();
+        InteractiveBandEdited?.Invoke(channel, localBand, true);
+
+        _filterDebounceCts?.Cancel();
+
+        int wireBand = CrossoverFilter.XoverBandBase + localBand;
+        QueueLiveSend(new List<(int, int, FilterParams)> { (channel, wireBand, p) });
     }
 
     // ── Input-pair linking (Master L/R + IN3/4, IN5/6, IN7/8) ──
@@ -3282,6 +3427,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task<bool> SetXoverFilter(int channel, int localBand, FilterParams p)
     {
+        CancelLiveFilterSends();   // this awaited write is authoritative — no stale live write after it
         if (_xoverData.TryGetValue(channel, out var bands) && localBand < bands.Count)
             bands[localBand] = p;
 
