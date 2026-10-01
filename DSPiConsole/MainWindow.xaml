@@ -109,7 +109,7 @@
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="T"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
-                        <MenuFlyoutItem Text="Bulk Endpoint Monitor..." Click="OnBulkMonitorClick">
+                        <MenuFlyoutItem Text="Interrupt Monitor..." Click="OnInterruptMonitorClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="I"/>
                             </MenuFlyoutItem.KeyboardAccelerators>

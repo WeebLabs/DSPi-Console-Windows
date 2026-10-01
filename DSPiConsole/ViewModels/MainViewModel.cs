@@ -444,6 +444,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private int EqWorkerStart => 2;
     private int EqWorkerEnd => EqWorkerEndForPlatform(Platform); // exclusive
 
+    /// <summary>The outputs (0-based, inclusive) that share Core 1 with the
+    /// PDM sub: enabling PDM disables them, and enabling one disables PDM.</summary>
+    public (int First, int Last) EqWorkerRange => (EqWorkerStart, EqWorkerEnd - 1);
+
     public bool WouldConflict(int outputIndex)
     {
         if (outputIndex == PdmOutputIndex)
@@ -457,9 +461,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return false;
     }
 
+    // Queued with the other writes: an enable queued before the switch (Direct
+    // 1:1 enables outputs 3-8) must not land after it.
     public async Task SwitchToPdmAsync()
     {
-        await Task.Run(() =>
+        await DeviceWriteAsync(() =>
         {
             for (int i = EqWorkerStart; i < EqWorkerEnd; i++)
                 _device.SetOutputEnable(i, false);
@@ -472,7 +478,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task SwitchFromPdmAsync(int enabling)
     {
-        await Task.Run(() =>
+        await DeviceWriteAsync(() =>
         {
             _device.SetOutputEnable(PdmOutputIndex, false);
             _device.SetOutputEnable(enabling, true);
@@ -1123,7 +1129,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _matrixRouting[input, output] = enabled;
         _matrixGain[input, output] = gain;
         _matrixInvert[input, output] = invert;
-        Task.Run(() => _device.SetMatrixRoute(input, output, enabled, invert, gain));
+        // Ordered: Direct 1:1 and Clear send runs of these, and an output enable
+        // after a PDM disable must land in that order.
+        DeviceWrite(() => _device.SetMatrixRoute(input, output, enabled, invert, gain));
         MatrixRouteChanged?.Invoke(input, output);
         CheckDirty();
     }
@@ -1161,7 +1169,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void SetOutputEnableUsb(int output, bool enabled)
     {
-        Task.Run(() => _device.SetOutputEnable(output, enabled));
+        DeviceWrite(() => _device.SetOutputEnable(output, enabled));
         CheckDirty();
     }
 
@@ -1822,7 +1830,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 InputPreampLDb = bp.PreampLDb;
                 InputPreampRDb = bp.PreampRDb;
                 for (int i = 2; i < Math.Min(8, bp.Preamp.Length); i++)
+                {
+                    // Raised per input, as a notification is, so open trims follow a re-seed.
+                    if (_inputPreampExtDb[i - 2] == bp.Preamp[i]) continue;
                     _inputPreampExtDb[i - 2] = bp.Preamp[i];
+                    InputPreampExtChanged?.Invoke(i);
+                }
             }
             else
             {

@@ -79,9 +79,14 @@ public partial class MainViewModel
     private void PushUpmixParam(ushort id, float value)
     {
         if (_upmixSuppress) return;
-        Task.Run(() => _device.SetUpmixParam(id, value));
+        // The ordered queue, which the window's live sends share.
+        DeviceWrite(() => _device.SetUpmixParam(id, value));
         CheckDirty();
     }
+
+    /// <summary>An upmix parameter during a drag (device only); the property
+    /// commits it.</summary>
+    public void SendUpmixLive(ushort id, float value) => DeviceWrite(() => _device.SetUpmixParam(id, value));
 
     partial void OnUpmixEnabledChanged(bool value)
     {

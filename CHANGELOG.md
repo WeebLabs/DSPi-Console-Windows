@@ -2,6 +2,13 @@
 
 ## 2026-10-03
 
+### Upmixer, matrix mixer, signal generator, statistics and interrupt monitor
+- Upmixer: a STATUS line (Active, Idle with its reason, or No device) with live centre and surround gauges shown only while it runs; the Mac's labels and sections, and a stage that is Off hides its settings
+- Matrix mixer: gain and INV show only on connected crosspoints, an active INV is orange; outputs that PDM would take over carry orange rings, and the PDM prompt names the outputs and says Enable PDM or Disable PDM; crosspoints of disabled outputs are dimmed but still clickable; delays stop at the device's limit; an output header's right-click menu has Identify, Rename, Copy Parameters and Paste Parameters; with more than two inputs, each input row has a trim, and the routing bar has Direct 1:1 and Clear; the table scrolls when it outgrows the screen
+- Signal generator: signals as picture tiles; output chips cycle on, inverted and off, with All and None; outputs disabled in the matrix are dimmed and the one playing during Walk is outlined; level -80 to 0 dB; the SMPTE and CCIF two-tone presets and the named intersample-peak patterns; a warning before RAW output; a Stop now button and the Space bar; a status pill reading Fading in, Running, Gap, Fading out or Idle; choosing a signal resets its settings, edits apply to a running signal after a short pause, None stops it, and it keeps playing when the window closes
+- Statistics: the reconnect count; overruns in orange and underruns in red; Streaming and PDM Active indicators; a 15 s trace under each buffer with its watermark band and thresholds, sampled every 60 ms; S/PDIF DMA starvation with per-pair counts and the time since the last event; S/PDIF input, LG Sound Sync, ADAT output and I2S input sections when the device has them
+- The Bulk Endpoint Monitor is now the Interrupt Monitor: every notification the firmware sends is named, with the field and value of every parameter change; a Listening, Paused or Inactive state and an event count; Pause (Ctrl+P) and Clear (Ctrl+K); it keeps the last 2000 lines and stays smooth during bursts
+
 ### Loudness, crossfeed, volume leveller and psychoacoustic bass
 - The four windows follow the macOS Console's layout: a header with the switch, and (apart from the leveller) two columns, the graph beside the parameters; every value is a slider with a typed field that sends as you drag and records once on release
 - Loudness: the curve is the compensation at -40 dB of volume (it was drawn 40 dB too low, at a different level), on a 20 Hz-20 kHz axis fitted to the curve, reading Disabled when off; the mask preset is "Slot 1 only (Headphones)"

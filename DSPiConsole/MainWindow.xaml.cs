@@ -50,7 +50,7 @@ public sealed partial class MainWindow : Window
     private bool _isUpdatingGain;
     private bool _closeConfirmed;
     private StatsWindow? _statsWindow;
-    private BulkMonitorWindow? _bulkMonitorWindow;
+    private InterruptMonitorWindow? _interruptMonitorWindow;
     private GraphWindow? _graphWindow;
     private LoudnessWindow? _loudnessWindow;
     private CrossfeedWindow? _crossfeedWindow;
@@ -5095,31 +5095,31 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _statsWindow = new StatsWindow(ViewModel.Device);
+        _statsWindow = new StatsWindow(ViewModel);
         _statsWindow.Closed += (s, e) => { _statsWindow = null; UpdateShortcutIconStates(); };
         _statsWindow.Activate();
         UpdateShortcutIconStates();
     }
 
-    private void OnBulkMonitorClick(object sender, RoutedEventArgs e)
+    private void OnInterruptMonitorClick(object sender, RoutedEventArgs e)
     {
         // Toggle behavior mirrors OnStatsClick: clicking again while open closes
         // the monitor. Singleton — only one log stream per device.
-        if (_bulkMonitorWindow != null)
+        if (_interruptMonitorWindow != null)
         {
-            _bulkMonitorWindow.Close();
+            _interruptMonitorWindow.Close();
             return;
         }
-        _bulkMonitorWindow = new BulkMonitorWindow(ViewModel.Device);
-        _bulkMonitorWindow.Closed += (s, e) => { _bulkMonitorWindow = null; };
-        _bulkMonitorWindow.Activate();
+        _interruptMonitorWindow = new InterruptMonitorWindow(ViewModel.Device);
+        _interruptMonitorWindow.Closed += (s, e) => { _interruptMonitorWindow = null; };
+        _interruptMonitorWindow.Activate();
     }
 
     private async void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         // Modeless settings window — single instance. Reactivating an
         // already-open window beats spawning a duplicate; mirrors the
-        // BulkMonitor / Stats singleton pattern elsewhere in this file
+        // Interrupt Monitor / Stats singleton pattern elsewhere in this file
         // except we don't auto-close on a second click (the new layout
         // is large enough that you'd rather raise focus than dismiss).
         if (_settingsWindow != null)

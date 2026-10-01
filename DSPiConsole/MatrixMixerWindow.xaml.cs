@@ -37,6 +37,11 @@ public sealed partial class MatrixMixerWindow : Window
 
     // Input row name labels: key = inputIndex
     private readonly Dictionary<int, TextBlock> _inputLabelTexts = new();
+    /// <summary>Per-input trim fields, multichannel only (wire input -> field).</summary>
+    private readonly Dictionary<int, TextBox> _inputTrimTexts = new();
+    /// <summary>What BuildUI added to the window: the card, or the scroll
+    /// viewer around it; a rebuild removes this.</summary>
+    private FrameworkElement? _tableRoot;
 
     // Output controls: key = outputIndex
     private readonly Dictionary<int, Button> _outputEnableButtons = new();
@@ -94,6 +99,8 @@ public sealed partial class MatrixMixerWindow : Window
             if (_closed) return;
             if (e.PropertyName == nameof(MainViewModel.IsDeviceConnected))
                 DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateDisconnectOverlay(); });
+            else if (e.PropertyName is nameof(MainViewModel.InputPreampLDb) or nameof(MainViewModel.InputPreampRDb))
+                DispatcherQueue.TryEnqueue(() => { if (!_closed) SyncInputTrims(); });
             else if (e.PropertyName is nameof(MainViewModel.ActiveInputs)
                                     or nameof(MainViewModel.UpmixRowsActive)
                                     or nameof(MainViewModel.UpmixSurroundRowsActive)
@@ -160,6 +167,12 @@ public sealed partial class MatrixMixerWindow : Window
         {
             if (_closed) return;
             DispatcherQueue.TryEnqueue(() => { if (!_closed) SyncOutputDelayUI(output); });
+        };
+
+        _viewModel.InputPreampExtChanged += _ =>
+        {
+            if (_closed) return;
+            DispatcherQueue.TryEnqueue(() => { if (!_closed) SyncInputTrims(); });
         };
 
         _viewModel.OutputEnabledChanged += (output, enabled) =>
@@ -266,6 +279,11 @@ public sealed partial class MatrixMixerWindow : Window
                 if (!string.IsNullOrEmpty(name)) _viewModel.SetChannelName(ch, name);
             };
             panel.Children.Add(headerName);
+            panel.ContextFlyout = HeaderMenu(o, ch, headerName);
+            // The name field fills most of the header, and would otherwise show
+            // its own text menu instead.
+            headerName.ContextFlyout = HeaderMenu(o, ch, headerName);
+            panel.Background = new SolidColorBrush(Colors.Transparent);
 
             panel.Children.Add(new Border
             {
@@ -289,8 +307,8 @@ public sealed partial class MatrixMixerWindow : Window
             grid.Children.Add(panel);
         }
 
-        // ── Row 1: ROUTING section bar ──
-        AddSectionBar(grid, 1, "ROUTING", outputCount);
+        // ── Row 1: ROUTING section bar (quick routes for a multichannel input) ──
+        AddSectionBar(grid, 1, "ROUTING", outputCount, IsMultichannel ? QuickRoutes() : null);
 
         // ── Source rows (one per active input / upmix row, dividers between) ──
         for (int i = 0; i < inputCount; i++)
@@ -357,6 +375,7 @@ public sealed partial class MatrixMixerWindow : Window
                 };
                 text.PointerWheelChanged += (s, e) =>
                 {
+                    if (!WheelEdits(text, e)) return;
                     e.Handled = true;
                     int delta = e.GetCurrentPoint(text).Properties.MouseWheelDelta;
                     float step = delta > 0 ? 0.5f : -0.5f;
@@ -415,11 +434,12 @@ public sealed partial class MatrixMixerWindow : Window
                 };
                 text.PointerWheelChanged += (s, e) =>
                 {
+                    if (!WheelEdits(text, e)) return;
                     e.Handled = true;
                     int delta = e.GetCurrentPoint(text).Properties.MouseWheelDelta;
                     float step = delta > 0 ? 1f : -1f;
                     float current = _viewModel.GetOutputDelayMs(o);
-                    float newDelay = Math.Max(0f, current + step);
+                    float newDelay = Math.Clamp(current + step, 0f, _viewModel.MaxOutputDelayMs);
                     _viewModel.SetOutputDelayMs(o, newDelay);
                     text.Text = FormatDelay(_viewModel.GetOutputDelayMs(o));
                 };
@@ -429,7 +449,7 @@ public sealed partial class MatrixMixerWindow : Window
                     {
                         e.Handled = true;
                         if (ParseDelayText(text.Text, out float val))
-                            _viewModel.SetOutputDelayMs(o, Math.Max(0f, val));
+                            _viewModel.SetOutputDelayMs(o, Math.Clamp(val, 0f, _viewModel.MaxOutputDelayMs));
                         FocusSink.Focus(FocusState.Programmatic);
                     }
                     else if (e.Key == Windows.System.VirtualKey.Escape)
@@ -441,7 +461,7 @@ public sealed partial class MatrixMixerWindow : Window
                 text.LostFocus += (s, e) =>
                 {
                     if (ParseDelayText(text.Text, out float val))
-                        _viewModel.SetOutputDelayMs(o, Math.Max(0f, val));
+                        _viewModel.SetOutputDelayMs(o, Math.Clamp(val, 0f, _viewModel.MaxOutputDelayMs));
                     else
                         text.Text = FormatDelay(_viewModel.GetOutputDelayMs(o));
                 };
@@ -489,10 +509,7 @@ public sealed partial class MatrixMixerWindow : Window
                 for (int input = 0; input < inputCount; input++)
                 {
                     if (_routeCells.TryGetValue((input, o), out var cell))
-                    {
-                        cell.Opacity = 0.25;
-                        cell.IsHitTestVisible = false;
-                    }
+                        cell.Opacity = 0.3;
                 }
             }
         }
@@ -509,12 +526,68 @@ public sealed partial class MatrixMixerWindow : Window
         };
 
         _card = card;
-        RootGrid.Children.Add(card);
+        // Eight input rows make a tall, wide table: it scrolls, and the window
+        // is capped to the screen (ResizeToContent). Fewer rows fit outright.
+        if (IsMultichannel)
+        {
+            card.Margin = new Thickness(0);
+            _tableRoot = new ScrollViewer
+            {
+                Content = new Border { Padding = new Thickness(16), Child = card },
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            };
+        }
+        else _tableRoot = card;
+        RootGrid.Children.Add(_tableRoot);
 
         // Keep overlay on top of card content
         RootGrid.Children.Remove(DisconnectOverlay);
         RootGrid.Children.Add(DisconnectOverlay);
     }
+
+    /// <summary>An output header's right-click menu: Identify (plays the ident
+    /// tone; a disabled output would play nothing), Rename, Copy and Paste.</summary>
+    private MenuFlyout HeaderMenu(int output, Channel ch, TextBox name)
+    {
+        var menu = new MenuFlyout();
+        var identify = new MenuFlyoutItem { Text = "Identify" };
+        identify.Click += async (_, _) => await _viewModel.IdentifyOutputAsync(output);
+        var identifySeparator = new MenuFlyoutSeparator();
+        var rename = new MenuFlyoutItem { Text = "Rename" };
+        rename.Click += (_, _) =>
+        {
+            name.Focus(FocusState.Programmatic);
+            name.SelectAll();
+        };
+        var copy = new MenuFlyoutItem { Text = "Copy Parameters" };
+        copy.Click += (_, _) => _viewModel.CopyChannelParams(ch);
+        var paste = new MenuFlyoutItem { Text = "Paste Parameters" };
+        paste.Click += (_, _) => _viewModel.PasteChannelParams(ch);
+        menu.Items.Add(identify);
+        menu.Items.Add(identifySeparator);
+        menu.Items.Add(rename);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(copy);
+        menu.Items.Add(paste);
+        menu.Opening += (_, _) =>
+        {
+            bool canIdentify = _viewModel.IsDeviceConnected && _viewModel.SiggenSupported;
+            identify.Visibility = identifySeparator.Visibility = canIdentify ? Visibility.Visible : Visibility.Collapsed;
+            identify.IsEnabled = _viewModel.IsOutputEnabled(output);
+            paste.IsEnabled = _viewModel.HasChannelClipboard;
+        };
+        return menu;
+    }
+
+    /// <summary>Whether the wheel over a value field steps it. In the scrolling
+    /// (multichannel) table the wheel scrolls, unless Ctrl is held or the field
+    /// has focus, so reading down the table never changes a value.</summary>
+    private bool WheelEdits(Control field, PointerRoutedEventArgs e) =>
+        _tableRoot is not ScrollViewer
+        || field.FocusState != FocusState.Unfocused
+        || e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control);
 
     private void ResizeToContent()
     {
@@ -522,11 +595,22 @@ public sealed partial class MatrixMixerWindow : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         double scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
-        RootGrid.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        var desired = RootGrid.DesiredSize;
-        appWindow?.Resize(new Windows.Graphics.SizeInt32(
-            (int)Math.Ceiling((desired.Width + 40) * scale),
-            (int)Math.Ceiling(desired.Height * scale) + _nonClientH));
+        // Measure the card itself: a scroll viewer would report the size it was given.
+        FrameworkElement measured = _card ?? (FrameworkElement)RootGrid;
+        measured.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var desired = measured.DesiredSize;
+        // A stereo card's own margin is in its desired size; in the scroll viewer
+        // the card has none and the 16 px padding is around it instead.
+        double margin = _card != null && _card.Margin.Left == 0 ? 32 : 0;
+        int width = (int)Math.Ceiling((desired.Width + margin + 40) * scale);
+        int height = (int)Math.Ceiling((desired.Height + margin) * scale) + _nonClientH;
+        if (appWindow != null)
+        {
+            var area = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+            width = Math.Min(width, area.Width);
+            height = Math.Min(height, area.Height);
+        }
+        appWindow?.Resize(new Windows.Graphics.SizeInt32(width, height));
     }
 
     private void UpdateDisconnectOverlay()
@@ -568,7 +652,7 @@ public sealed partial class MatrixMixerWindow : Window
 
     private void RebuildUI()
     {
-        if (_card != null) RootGrid.Children.Remove(_card);
+        if (_tableRoot != null) RootGrid.Children.Remove(_tableRoot);
         _routeCircles.Clear();
         _routeGainTexts.Clear();
         _routeInvButtons.Clear();
@@ -577,6 +661,7 @@ public sealed partial class MatrixMixerWindow : Window
         _routeCells.Clear();
         _headerNameTexts.Clear();
         _inputLabelTexts.Clear();
+        _inputTrimTexts.Clear();
         _outputEnableButtons.Clear();
         _outputGainTexts.Clear();
         _outputDelayTexts.Clear();
@@ -616,6 +701,93 @@ public sealed partial class MatrixMixerWindow : Window
         return rows;
     }
 
+    /// <summary>A multichannel input (more than the stereo pair live) gets the
+    /// quick routes and per-input trims; stereo, with or without the upmixer,
+    /// keeps the plain table.</summary>
+    private bool IsMultichannel => _viewModel.ActiveInputChannelCount > 2;
+
+    /// <summary>Out of the box an 8-channel stream is silent until routes are
+    /// set, so the routing bar offers the diagonal and a clear.</summary>
+    private FrameworkElement QuickRoutes()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        Button Make(string text, string tip, Action act)
+        {
+            var b = new Button { Content = text, FontSize = 11, Padding = new Thickness(10, 2, 10, 3), MinHeight = 0 };
+            ToolTipService.SetToolTip(b, tip);
+            b.Click += (_, _) => act();
+            return b;
+        }
+        row.Children.Add(Make("Direct 1:1", "Route each input to the matching output (FL\u2192OUT1, FR\u2192OUT2, \u2026) and disable the PDM sub",
+            _viewModel.ApplyDirectRouting));
+        row.Children.Add(Make("Clear", "Disconnect every crosspoint", _viewModel.ClearAllRoutes));
+        return row;
+    }
+
+    /// <summary>A compact per-input trim (the input's preamp), for correcting
+    /// level or a host's channel-mapping differences (spec §14).</summary>
+    private TextBox TrimField(int wireInput)
+    {
+        var text = new TextBox
+        {
+            Text = FormatGain(_viewModel.InputPreampAt(wireInput)),
+            FontSize = 10,
+            FontFamily = new FontFamily("Cascadia Code, Consolas"),
+            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(150, 255, 255, 255)),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            TextAlignment = TextAlignment.Left,
+            Style = (Style)RootGrid.Resources["InlineTextBoxStyle"],
+            Width = 56,
+            Margin = new Thickness(14, 0, 0, 0),
+        };
+        ToolTipService.SetToolTip(text, "Input trim (preamp)");
+        void Commit(float db)
+        {
+            _viewModel.SetInputPreampAt(wireInput, Math.Clamp(db, -60f, 12f));
+            text.Text = FormatGain(_viewModel.InputPreampAt(wireInput));
+        }
+        text.PointerWheelChanged += (s, e) =>
+        {
+            if (!WheelEdits(text, e)) return;
+            e.Handled = true;
+            int delta = e.GetCurrentPoint(text).Properties.MouseWheelDelta;
+            Commit(_viewModel.InputPreampAt(wireInput) + (delta > 0 ? 0.5f : -0.5f));
+        };
+        text.KeyDown += (s, e) =>
+        {
+            if (e.Key == Windows.System.VirtualKey.Enter)
+            {
+                e.Handled = true;
+                if (ParseGainText(text.Text, out float val)) Commit(val);
+                FocusSink.Focus(FocusState.Programmatic);
+            }
+            else if (e.Key == Windows.System.VirtualKey.Escape)
+            {
+                text.Text = FormatGain(_viewModel.InputPreampAt(wireInput));
+                FocusSink.Focus(FocusState.Programmatic);
+            }
+        };
+        text.LostFocus += (s, e) =>
+        {
+            if (ParseGainText(text.Text, out float val)) Commit(val);
+            else text.Text = FormatGain(_viewModel.InputPreampAt(wireInput));
+        };
+        text.RightTapped += (s, e) =>
+        {
+            e.Handled = true;
+            Commit(0f);
+        };
+        _inputTrimTexts[wireInput] = text;
+        return text;
+    }
+
+    private void SyncInputTrims()
+    {
+        foreach (var (wire, text) in _inputTrimTexts)
+            if (text.FocusState == FocusState.Unfocused)
+                text.Text = FormatGain(_viewModel.InputPreampAt(wire));
+    }
+
     // Adds an input row (routing section): colored label + route cells per output
     private void AddInputRow(Grid grid, int row, int inputIndex, Channel inputCh, string label0, int outputCount)
     {
@@ -630,9 +802,19 @@ public sealed partial class MatrixMixerWindow : Window
             Margin = new Thickness(14, 0, 4, 0)
         };
         _inputLabelTexts[inputIndex] = label;
-        Grid.SetColumn(label, 0);
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
+        FrameworkElement labelCell = label;
+        // A real input row of a multichannel input carries its trim; upmix
+        // rows have no preamp of their own.
+        if (IsMultichannel && inputIndex < _viewModel.ActiveInputChannelCount)
+        {
+            var stack = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+            stack.Children.Add(label);
+            stack.Children.Add(TrimField(inputIndex));
+            labelCell = stack;
+        }
+        Grid.SetColumn(labelCell, 0);
+        Grid.SetRow(labelCell, row);
+        grid.Children.Add(labelCell);
 
         for (int outp = 0; outp < outputCount; outp++)
         {
@@ -748,6 +930,7 @@ public sealed partial class MatrixMixerWindow : Window
         };
         gainText.PointerWheelChanged += (s, e) =>
         {
+            if (!WheelEdits(gainText, e)) return;
             e.Handled = true;
             int delta = e.GetCurrentPoint(gainText).Properties.MouseWheelDelta;
             float step = delta > 0 ? 0.5f : -0.5f;
@@ -831,9 +1014,7 @@ public sealed partial class MatrixMixerWindow : Window
 
         // INV text (below circle) — dims when off, illuminates when on, fades on hover
         _routeInverted[(input, output)] = initInverted;
-        var invColor = initInverted
-            ? Color.FromArgb(175, 255, 255, 255)
-            : Color.FromArgb(60, 200, 200, 220);
+        var invColor = initInverted ? InvOnColor : InvOffColor;
         var invBrush = new SolidColorBrush(invColor);
         var invText = new TextBlock
         {
@@ -874,17 +1055,18 @@ public sealed partial class MatrixMixerWindow : Window
         invText.PointerExited += (s, e) =>
         {
             if (!_routeInverted[(input, output)])
-                AnimateInvColor(Color.FromArgb(60, 200, 200, 220), 200);
+                AnimateInvColor(InvOffColor, 200);
         };
         _routeInvButtons[(input, output)] = invText;
         panel.Children.Add(invText);
 
         _routeCells[(input, output)] = panel;
+        ApplyRouteState(input, output);
         return panel;
     }
 
     // Full-width section header bar spanning all columns
-    private void AddSectionBar(Grid grid, int row, string text, int outputCount)
+    private void AddSectionBar(Grid grid, int row, string text, int outputCount, FrameworkElement? trailing = null)
     {
         var content = new StackPanel
         {
@@ -912,13 +1094,24 @@ public sealed partial class MatrixMixerWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         });
 
+        FrameworkElement barContent = content;
+        if (trailing != null)
+        {
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.Children.Add(content);
+            Grid.SetColumn(trailing, 1);
+            g.Children.Add(trailing);
+            barContent = g;
+        }
         var bar = new Border
         {
             Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 36, 36, 36)),
             BorderBrush = CellBorderBrush,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            Padding = new Thickness(14, 8, 14, 8),
-            Child = content
+            Padding = new Thickness(14, trailing != null ? 4 : 8, 14, trailing != null ? 4 : 8),
+            Child = barContent
         };
 
         Grid.SetColumnSpan(bar, outputCount + 2);
@@ -946,7 +1139,6 @@ public sealed partial class MatrixMixerWindow : Window
         {
             circle.Background = new SolidColorBrush(Colors.Transparent);
             circle.BorderThickness = new Thickness(2);
-            circle.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(90, 160, 160, 170));
         }
     }
 
@@ -963,15 +1155,48 @@ public sealed partial class MatrixMixerWindow : Window
             gt.FocusState == FocusState.Unfocused)
             gt.Text = FormatGain(gain);
 
+        _routeInverted[(input, output)] = _viewModel.GetMatrixInvert(input, output);
+        ApplyRouteState(input, output);
+    }
+
+    private static readonly Color InvOnColor = Color.FromArgb(255, 255, 159, 10);
+    private static readonly Color InvOffColor = Color.FromArgb(60, 200, 200, 220);
+    private static readonly Color RingColor = Color.FromArgb(90, 160, 160, 170);
+    private static readonly Color ConflictRingColor = Color.FromArgb(115, 255, 159, 10);
+
+    /// <summary>A crosspoint's gain and INV show only while it is connected
+    /// (kept in place at zero opacity, so the rows never change height); an
+    /// active INV is orange and bold. The PDM column's empty rings turn orange
+    /// while enabling PDM would switch other outputs off.</summary>
+    private void ApplyRouteState(int input, int output)
+    {
+        bool connected = _viewModel.GetMatrixRouting(input, output);
         bool inverted = _viewModel.GetMatrixInvert(input, output);
-        _routeInverted[(input, output)] = inverted;
-        if (_routeInvButtons.TryGetValue((input, output), out var inv) &&
-            inv.Foreground is SolidColorBrush invBrush)
+        if (_routeGainTexts.TryGetValue((input, output), out var gain))
         {
-            invBrush.Color = inverted
-                ? Color.FromArgb(175, 255, 255, 255)
-                : Color.FromArgb(60, 200, 200, 220);
+            gain.Opacity = connected ? 1 : 0;
+            gain.IsHitTestVisible = connected;
+            gain.IsTabStop = connected;
         }
+        if (_routeInvButtons.TryGetValue((input, output), out var inv))
+        {
+            inv.Opacity = connected ? 1 : 0;
+            inv.IsHitTestVisible = connected;
+            inv.FontWeight = inverted ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.SemiBold;
+            if (inv.Foreground is SolidColorBrush brush) brush.Color = inverted ? InvOnColor : InvOffColor;
+        }
+        if (!connected && _routeCircles.TryGetValue((input, output), out var circle))
+        {
+            bool ring = output == _viewModel.PdmOutputIndex && _viewModel.WouldConflict(output);
+            circle.BorderBrush = new SolidColorBrush(ring ? ConflictRingColor : RingColor);
+        }
+    }
+
+    private void RefreshConflictRings()
+    {
+        int pdm = _viewModel.PdmOutputIndex;
+        foreach (var (input, output) in _routeCells.Keys)
+            if (output == pdm) ApplyRouteState(input, output);
     }
 
     private void SyncOutputGainUI(int output)
@@ -1021,15 +1246,15 @@ public sealed partial class MatrixMixerWindow : Window
         // Dim / un-dim route cells for this output
         for (int input = 0; input < MainViewModel.MatrixMaxInputs; input++)
         {
+            // Dimmed but still clickable: a route can be set up before the
+            // output is switched on.
             if (_routeCells.TryGetValue((input, output), out var cell))
-            {
-                cell.Opacity = enabled ? 1.0 : 0.25;
-                cell.IsHitTestVisible = enabled;
-            }
+                cell.Opacity = enabled ? 1.0 : 0.3;
         }
 
-        // Refresh conflict styling on all enable buttons
+        // Refresh conflict styling on all enable buttons and the PDM rings
         RefreshConflictStyling();
+        RefreshConflictRings();
     }
 
     private async void OnEnableClick(object sender, RoutedEventArgs e)
@@ -1048,11 +1273,12 @@ public sealed partial class MatrixMixerWindow : Window
         // Enabling — check for conflict
         if (_viewModel.WouldConflict(o))
         {
+            bool enablingPdm = o == _viewModel.PdmOutputIndex;
             var dialog = new ContentDialog
             {
-                Title = "Output Conflict",
+                Title = "Warning",
                 Content = GetConflictMessage(o),
-                PrimaryButtonText = "Proceed",
+                PrimaryButtonText = enablingPdm ? "Enable PDM" : "Disable PDM",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = Content.XamlRoot
@@ -1074,19 +1300,16 @@ public sealed partial class MatrixMixerWindow : Window
         _viewModel.SetOutputEnableUsb(o, true);
     }
 
+    /// <summary>The outputs that share Core 1 with the PDM sub, named by
+    /// their 1-based numbers, as the macOS Console words it.</summary>
     private string GetConflictMessage(int outputIndex)
     {
-        bool isPdm = outputIndex == _viewModel.PdmOutputIndex;
-        bool isRp2040 = _viewModel.Platform == "RP2040";
-
-        if (isPdm)
-            return isRp2040
-                ? "Enabling PDM will disable SPDIF 2. Do you wish to proceed?"
-                : "Enabling PDM will disable SPDIF 2, 3 and 4. Do you wish to proceed?";
-        else
-            return isRp2040
-                ? "Enabling SPDIF 2 will disable PDM. Do you wish to proceed?"
-                : "Enabling SPDIF 2, 3 or 4 will disable PDM. Do you wish to proceed?";
+        if (outputIndex == _viewModel.PdmOutputIndex)
+        {
+            var (first, last) = _viewModel.EqWorkerRange;
+            return $"Outputs {first + 1}-{last + 1} will be disabled. Are you sure?";
+        }
+        return "The PDM output will be disabled. Are you sure?";
     }
 
     private void RefreshConflictStyling()

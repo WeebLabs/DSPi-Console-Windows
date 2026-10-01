@@ -449,7 +449,7 @@ analyser starts. A larger transform resolves finer detail but refreshes each cha
 | Ctrl+Shift+A | Spectrum analyser |
 | Ctrl+Shift+G | Test signal generator |
 | Ctrl+Shift+T | Statistics |
-| Ctrl+Shift+I | Bulk endpoint monitor |
+| Ctrl+Shift+I | Interrupt monitor |
 | Alt+F4 | Exit |
 
 The tool-window letters match DSPi Console for macOS. Preset files are imported and exported from the File menu.
@@ -529,15 +529,15 @@ DSPiConsole-Windows/
 │   ├── MainWindow.xaml(.cs)            # Sidebar, dashboard, channel and crossover editors, graph
 │   ├── MatrixMixerWindow.xaml(.cs)     # Routing matrix and per-output controls
 │   ├── GraphWindow.xaml(.cs)           # Detachable frequency response plot
-│   ├── LoudnessWindow.xaml(.cs)        # ISO 226 loudness compensation
-│   ├── CrossfeedWindow.xaml(.cs)       # BS2B headphone crossfeed
-│   ├── VolumeLevellerWindow.xaml(.cs)  # Upward compression
-│   ├── PsychoacousticBassWindow.xaml(.cs)
-│   ├── UpmixerWindow.xaml(.cs)         # Stereo to centre and surround upmixing
-│   ├── TestSignalsWindow.xaml(.cs)     # Onboard signal generator
+│   ├── LoudnessWindow.cs               # ISO 226 loudness compensation
+│   ├── CrossfeedWindow.cs              # BS2B headphone crossfeed
+│   ├── VolumeLevellerWindow.cs         # Upward compression
+│   ├── PsychoacousticBassWindow.cs
+│   ├── UpmixerWindow.cs                # Stereo to centre and surround upmixing
+│   ├── TestSignalsWindow.cs            # Onboard signal generator
 │   ├── ControlSurfacesWindow.xaml(.cs) # GPIO and infrared control bindings
-│   ├── StatsWindow.xaml(.cs)           # Telemetry and buffer statistics
-│   ├── BulkMonitorWindow.xaml(.cs)     # Control traffic decoder
+│   ├── StatsWindow.cs                  # Telemetry and buffer statistics
+│   ├── InterruptMonitorWindow.cs       # Notification endpoint log
 │   ├── Settings/                       # Settings shell, registry and pages
 │   ├── Controls/                       # Bode plot, meters, CPU display
 │   ├── Dialogs/                        # AutoEQ browser, channel pickers

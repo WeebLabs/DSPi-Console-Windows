@@ -19,7 +19,7 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 | 4.1 RTA engine, 4.2 window, 4.3 graph overlay, 4.5 gear SPECTRUM section | Done 2026-10-03, committed on `spectrum-analyser`; hardware test pending |
 | 4.4 bar strip and RTA Bars switch, 4.6 Settings page, 4.7 bar loop paused when hidden | Done 2026-10-03, committed on `spectrum-analyser`; hardware test pending |
 | 5 Loudness, Crossfeed, Volume Leveller, Psychoacoustic Bass | Done 2026-10-03, committed on `tool-window-parity`; hardware test pending |
-| 5 Upmixer, Matrix Mixer, Signal Generator, Statistics, Interrupt Monitor | Not started |
+| 5 Upmixer, Matrix Mixer, Signal Generator, Statistics, Interrupt Monitor | Done 2026-10-03, committed on `tool-window-parity`; hardware test pending |
 | 6-8 | Not started |
 
 Notes from doing Phases 0 and 1:
@@ -64,7 +64,7 @@ Windows does not break against beta4 firmware. Its bulk parser accepts V32 image
 - **AutoEQ:** apply opens a channel picker.
 - **ADAT free-running warning:** the fix-it button picks a free TX pin.
 - **Control Surfaces:** macro total delay, and a group live preview with "x of N" counters.
-- **Bulk Endpoint Monitor:** auto-scroll, IDLE filter, raw hex view and crossover decode.
+- **Interrupt Monitor** (was Bulk Endpoint Monitor): auto-scroll, IDLE filter, raw hex view and crossover decode.
 - **Windows-only preferences:** dotted inactive channels, gain affects displayed level, dB axis units, and a Save button. The About page shows platform and firmware.
 
 ---

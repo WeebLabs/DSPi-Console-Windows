@@ -17,10 +17,14 @@ public partial class MainViewModel
     private Task _deviceQueue = Task.CompletedTask;
 
     /// <summary>Runs a device write after every write queued before it.</summary>
-    internal void DeviceWrite(Action write)
+    internal void DeviceWrite(Action write) => DeviceWriteAsync(write);
+
+    /// <summary>As <see cref="DeviceWrite"/>, for a caller that waits for the
+    /// write; the task completes once it has run, failed or not.</summary>
+    internal Task DeviceWriteAsync(Action write)
     {
         lock (_deviceQueueLock)
-            _deviceQueue = _deviceQueue.ContinueWith(_ => { try { write(); } catch { } }, TaskScheduler.Default);
+            return _deviceQueue = _deviceQueue.ContinueWith(_ => { try { write(); } catch { } }, TaskScheduler.Default);
     }
 
     // ── Live sends: device only, for values during a drag ──

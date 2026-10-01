@@ -481,6 +481,12 @@ public struct SpdifRxStatus
     public uint SampleRate;
     public uint ParityErrors;
     public ushort FifoFillPct;
+    /// <summary>The receiver library's own state: 0 no signal, 1 waiting
+    /// for a stable signal, 2 stable (debug byte 14).</summary>
+    public byte LibState;
+    /// <summary>High nibble: on-stable callbacks; low nibble: on-lost-stable
+    /// callbacks (debug byte 15).</summary>
+    public byte CallbackCounts;
 }
 
 /// <summary>
@@ -678,7 +684,7 @@ public partial class DspDevice : ObservableObject, IDisposable
 
     /// <summary>Fired for every raw packet read from the notification endpoint —
     /// IDLE keep-alives, decoded events, unknown event IDs, malformed packets.
-    /// Diagnostic hook used by the Bulk Endpoint Monitor window. Fires on the
+    /// Diagnostic hook used by the Interrupt Monitor window. Fires on the
     /// notify background thread; subscribers must marshal to the UI thread.</summary>
     public event EventHandler<NotifyPacket>? NotifyPacketReceived;
 
@@ -2380,7 +2386,7 @@ public partial class DspDevice : ObservableObject, IDisposable
             if (err != LibUsbDotNet.Error.Success || len <= 0)
                 continue;
 
-            // Fire the raw-packet event before decoding so the Bulk Endpoint
+            // Fire the raw-packet event before decoding so the Interrupt
             // Monitor sees IDLE keep-alives, unknown event IDs, and malformed
             // packets too — not just the subset ProcessNotifyPacket understands.
             // Copy the slice we care about; the next read overwrites buf.
@@ -2696,7 +2702,9 @@ public partial class DspDevice : ObservableObject, IDisposable
             LossCount = r[3],
             SampleRate = BitConverter.ToUInt32(r, 4),
             ParityErrors = BitConverter.ToUInt32(r, 8),
-            FifoFillPct = BitConverter.ToUInt16(r, 12)
+            FifoFillPct = BitConverter.ToUInt16(r, 12),
+            LibState = r[14],
+            CallbackCounts = r[15],
         };
     }
 
