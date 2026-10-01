@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-03
+
+### Output limiter
+- Each output's page has a limiter icon under the mute button: grey when off, the accent colour when on, orange while it is reducing gain; a click switches the limiter, a right-click opens its settings
+- The settings hold the threshold, release and link group, with Copy to all outputs and an All outputs menu (link every stereo pair, unlink all, switch every limiter off); linked outputs share their settings, as the firmware gangs them
+
+### Sliders
+- Dragging the output gain, output delay and input preamp sliders sends values to the device as the slider moves, at most 30 times a second, and records the change once on release; device writes now always arrive in the order they were made
+- Typed output gain applies on Enter or on leaving the field, not per keystroke
+
 ## 2026-10-02
 
 ### Firmware 1.1.6 beta 4 groundwork

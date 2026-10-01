@@ -114,7 +114,7 @@ public partial class MainViewModel
     private void TubeSend(ushort index, float value)
     {
         if (_tubeSuppress) return;
-        Task.Run(() => _device.SetTubeParam(index, value));
+        DeviceWrite(() => _device.SetTubeParam(index, value));
         CheckDirty();
     }
 

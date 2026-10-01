@@ -90,16 +90,16 @@ public partial class MainViewModel
     partial void OnSubharmSoloChanged(bool value)
     {
         if (_subharmSuppress) return;
-        Task.Run(() => _device.SetSubharmSolo(value));
+        DeviceWrite(() => _device.SetSubharmSolo(value));
     }
 
     private void SubharmSend(Func<bool> send, bool headroom)
     {
         if (_subharmSuppress) return;
-        Task.Run(() =>
+        DeviceWrite(() =>
         {
             send();
-            // The GET is ordered behind the SET on the bus, so it reflects it.
+            // The GET runs behind the SET, so it reflects it.
             if (headroom) FetchSubharmHeadroom();
         });
         CheckDirty();

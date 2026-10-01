@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
     private bool _filterPageIsXover;
     private int _filterPageChannelId = -1;
     private Slider? _inputPreampSlider;
+    private SliderDrag? _inputPreampDrag;
     private TextBlock? _inputPreampValueText;
     private bool _isScrollAdjusting;
     private DateTime _lastFilterScrollTime = DateTime.MinValue;
@@ -64,8 +65,10 @@ public sealed partial class MainWindow : Window
     private TextBox? _currentGainTextBox;
     private TextBox? _currentDelayTextBox;
     private Slider? _currentGainSlider;
+    private SliderDrag? _currentGainDrag;
     private ToggleButton? _currentMuteButton;
     private Slider? _currentDelaySlider;
+    private SliderDrag? _currentDelayDrag;
     private TextBlock? _currentDelayUnitText;
 
     // Route indicator controls for current output channel
@@ -1185,6 +1188,7 @@ public sealed partial class MainWindow : Window
         ChannelHeaderHost.Child = null;
         ChannelHeaderHost.Visibility = Visibility.Visible;
         _inputPreampSlider = null;
+        _inputPreampDrag = null;
         _inputPreampValueText = null;
 
         if (!channel.IsOutput)
@@ -1321,12 +1325,15 @@ public sealed partial class MainWindow : Window
                 Margin = new Thickness(0),
                 Padding = new Thickness(0)
             };
-            preampSlider.ValueChanged += (_, e) =>
-            {
-                float v = (float)e.NewValue;
-                if (Math.Abs(ViewModel.InputPreampAt(wireInput) - v) > 0.1f)
-                    ViewModel.SetInputPreampAt(wireInput, v);
-            };
+            // A drag sends live values to the device and commits once on release.
+            var preampDrag = new SliderDrag(preampSlider,
+                live: v => ViewModel.SendInputPreampLive(wireInput, v),
+                commit: v =>
+                {
+                    if (Math.Abs(ViewModel.InputPreampAt(wireInput) - v) > 0.05f)
+                        ViewModel.SetInputPreampAt(wireInput, v);
+                },
+                snap: v => MathF.Round(v * 2) / 2);
             preampSlider.RightTapped += (_, e) =>
             {
                 e.Handled = true;
@@ -1370,7 +1377,9 @@ public sealed partial class MainWindow : Window
             Grid.SetColumn(preampBox, 1);
             headerRow.Children.Add(preampBox);
 
+            preampDrag.Moved += v => preampValue.Text = $"{v:F1} dB";
             _inputPreampSlider = preampSlider;
+            _inputPreampDrag = preampDrag;
             _inputPreampValueText = preampValue;
             UpdateInputPreampEditor();
 
@@ -1425,6 +1434,8 @@ public sealed partial class MainWindow : Window
 
         // Output channel controls: Gain, Delay, Mute
         _currentMuteButton = null;   // only outputs have one; drop the last page's
+        _limiterButton = null;       // likewise the limiter icon under it
+        _limiterIcon = null;
         if (channel.IsOutput)
         {
             // Determine output index for matrix routing
@@ -1463,6 +1474,7 @@ public sealed partial class MainWindow : Window
             var gainSection = new StackPanel { Spacing = 4 };
 
             Slider gainSlider = null!;
+            SliderDrag gainDrag = null!;
             TextBox gainTextBox = null!;
             var gainHeaderRow = new Grid { Margin = new Thickness(0, 11, 0, 0) };
             gainHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1506,7 +1518,9 @@ public sealed partial class MainWindow : Window
                 FontFamily = new FontFamily("Cascadia Code, Consolas"),
                 Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
             };
-            gainTextBox.TextChanged += OnGainTextChanged;
+            // Typed gain applies on Enter (which moves focus away) or on leaving
+            // the field, not per keystroke.
+            gainTextBox.LostFocus += OnGainTextCommitted;
             gainTextBox.KeyDown += (s, e) =>
             {
                 if (e.Key == Windows.System.VirtualKey.Enter)
@@ -1527,7 +1541,7 @@ public sealed partial class MainWindow : Window
                 _isUpdatingGain = true;
                 ViewModel.SetChannelGain((int)channel.Id, newVal);
                 gainTextBox.Text = newVal.ToString("0.00", CultureInfo.InvariantCulture);
-                gainSlider.Value = newVal;
+                gainDrag.Show(newVal);
                 _isUpdatingGain = false;
                 ev.Handled = true;
             };
@@ -1545,7 +1559,12 @@ public sealed partial class MainWindow : Window
                 IsEnabled = !gainLocked
             };
             gainTextBox.IsEnabled = !gainLocked;
-            gainSlider.ValueChanged += OnGainSliderChanged;
+            int gainChannelId = (int)channel.Id;
+            gainDrag = new SliderDrag(gainSlider,
+                live: v => ViewModel.SendChannelGainLive(gainChannelId, v),
+                commit: v => ViewModel.SetChannelGain(gainChannelId, v),
+                snap: v => MathF.Round(v));
+            gainDrag.Moved += v => gainTextBox.Text = v.ToString("0.00", CultureInfo.InvariantCulture);
             gainSlider.RightTapped += (s, e) =>
             {
                 e.Handled = true;
@@ -1556,13 +1575,14 @@ public sealed partial class MainWindow : Window
                         saved = sg;
                     _isUpdatingGain = true;
                     ViewModel.SetChannelGain((int)ch.Id, saved);
-                    sl.Value = saved;
+                    gainDrag.Show(saved);
                     if (_currentGainTextBox != null)
                         _currentGainTextBox.Text = saved.ToString("0.00", CultureInfo.InvariantCulture);
                     _isUpdatingGain = false;
                 }
             };
             _currentGainSlider = gainSlider;
+            _currentGainDrag = gainDrag;
 
             gainSection.Children.Add(gainSlider);
             Grid.SetColumn(gainSection, 0);
@@ -1582,6 +1602,7 @@ public sealed partial class MainWindow : Window
             var delaySection = new StackPanel { Spacing = 4 };
 
             Slider delaySlider = null!;
+            SliderDrag delayDrag = null!;
             TextBox delayTextBox = null!;
             var delayHeaderRow = new Grid { Margin = new Thickness(0, 11, 0, 0) };
             delayHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1683,7 +1704,7 @@ public sealed partial class MainWindow : Window
                 _isUpdatingDelay = true;
                 ViewModel.SetDelay((int)channel.Id, newVal);
                 delayTextBox.Text = newVal.ToString("0.00##", CultureInfo.InvariantCulture);
-                delaySlider.Value = newVal;
+                delayDrag.Show(newVal);
                 _isUpdatingDelay = false;
                 ev.Handled = true;
             };
@@ -1703,7 +1724,12 @@ public sealed partial class MainWindow : Window
                 IsEnabled = !delayLocked
             };
             delayTextBox.IsEnabled = !delayLocked;
-            delaySlider.ValueChanged += OnDelaySliderChanged;
+            int delayChannelId = (int)channel.Id;
+            delayDrag = new SliderDrag(delaySlider,
+                live: v => ViewModel.SendDelayLive(delayChannelId, v),
+                commit: v => ViewModel.SetDelay(delayChannelId, v),
+                snap: v => MathF.Round(v));
+            delayDrag.Moved += v => delayTextBox.Text = v.ToString("0.00##", CultureInfo.InvariantCulture);
             delaySlider.RightTapped += (s, e) =>
             {
                 e.Handled = true;
@@ -1714,13 +1740,14 @@ public sealed partial class MainWindow : Window
                         saved = sd;
                     _isUpdatingDelay = true;
                     ViewModel.SetDelay((int)ch.Id, saved);
-                    sl.Value = saved;
+                    delayDrag.Show(saved);
                     if (_currentDelayTextBox != null)
                         _currentDelayTextBox.Text = saved.ToString("0.00##", CultureInfo.InvariantCulture);
                     _isUpdatingDelay = false;
                 }
             };
             _currentDelaySlider = delaySlider;
+            _currentDelayDrag = delayDrag;
 
             delaySection.Children.Add(delaySlider);
 
@@ -1750,8 +1777,13 @@ public sealed partial class MainWindow : Window
             ApplyMuteButtonState(muteBtn, isMuted);
             muteBtn.Click += OnMuteToggleClick;
             _currentMuteButton = muteBtn;
-            Grid.SetColumn(muteBtn, 4);
-            cardGrid.Children.Add(muteBtn);
+            // The output limiter's icon sits under the mute button (V32+).
+            var muteColumn = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 0 };
+            muteColumn.Children.Add(muteBtn);
+            if (CreateLimiterCell(_currentOutputIndex) is { } limiterCell)
+                muteColumn.Children.Add(limiterCell);
+            Grid.SetColumn(muteColumn, 4);
+            cardGrid.Children.Add(muteColumn);
 
             // ── Routing section (left side) ──
             var dimGray = Color.FromArgb(90, 160, 160, 170);
@@ -2936,6 +2968,7 @@ public sealed partial class MainWindow : Window
                 case nameof(MainViewModel.IsDeviceConnected):
                     UpdateConnectionStatus();
                     UpdateFirmwareMismatchBar();
+                    UpdateLimiterCell();
                     break;
                 case nameof(MainViewModel.FirmwareMatch):
                     UpdateFirmwareMismatchBar();
@@ -3264,8 +3297,9 @@ public sealed partial class MainWindow : Window
         if (_inputPreampSlider == null || _inputPreampValueText == null) return;
         if (_selectedChannel == null || _selectedChannel.IsOutput) return;
         float v = ViewModel.InputPreampAt(InputWireIndex(_selectedChannel));
+        if (_inputPreampDrag?.IsDragging == true) return;
         if (Math.Abs(_inputPreampSlider.Value - v) > 0.05)
-            _inputPreampSlider.Value = v;
+            _inputPreampDrag?.Show(v);
         _inputPreampValueText.Text = $"{v:F1} dB";
     }
 
@@ -3664,22 +3698,6 @@ public sealed partial class MainWindow : Window
         ViewModel.ClearAllMasterCommand.Execute(null);
     }
 
-    private void OnDelaySliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        if (_isUpdatingDelay) return;
-        if (sender is Slider slider && slider.Tag is Channel channel)
-        {
-            _isUpdatingDelay = true;
-            float snapped = MathF.Round((float)e.NewValue);
-            ViewModel.SetDelay((int)channel.Id, snapped);
-            if (_currentDelayTextBox != null)
-            {
-                _currentDelayTextBox.Text = snapped.ToString("0.00##", CultureInfo.InvariantCulture);
-            }
-            _isUpdatingDelay = false;
-        }
-    }
-
     /// <summary>Applies a typed delay when the field loses focus (Enter moves
     /// focus away), not per keystroke: typing "12" must not send 1 ms first.
     /// Unreadable text reverts to the current value.</summary>
@@ -3692,8 +3710,7 @@ public sealed partial class MainWindow : Window
         if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
         {
             ViewModel.SetDelay((int)channel.Id, value);
-            if (_currentDelaySlider != null)
-                _currentDelaySlider.Value = ViewModel.GetChannelDelay(channel);
+            _currentDelayDrag?.Show(ViewModel.GetChannelDelay(channel));
         }
         textBox.Text = ViewModel.GetChannelDelay(channel).ToString("0.00##", CultureInfo.InvariantCulture);
         _isUpdatingDelay = false;
@@ -3709,39 +3726,21 @@ public sealed partial class MainWindow : Window
         return string.Format(CultureInfo.InvariantCulture, "{0:0.#}", cm);
     }
 
-    private void OnGainSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    /// <summary>Applies a typed gain when the field loses focus (Enter moves
+    /// focus away), not per keystroke. Unreadable text reverts.</summary>
+    private void OnGainTextCommitted(object sender, RoutedEventArgs e)
     {
         if (_isUpdatingGain) return;
-        if (sender is Slider slider && slider.Tag is Channel channel)
-        {
-            _isUpdatingGain = true;
-            float snapped = MathF.Round((float)e.NewValue);
-            ViewModel.SetChannelGain((int)channel.Id, snapped);
-            if (_currentGainTextBox != null)
-            {
-                _currentGainTextBox.Text = snapped.ToString("0.00", CultureInfo.InvariantCulture);
-            }
-            _isUpdatingGain = false;
-        }
-    }
+        if (sender is not TextBox textBox || textBox.Tag is not Channel channel) return;
 
-    private void OnGainTextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_isUpdatingGain) return;
-        if (sender is TextBox textBox && textBox.Tag is Channel channel)
+        _isUpdatingGain = true;
+        if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
         {
-            if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
-            {
-                _isUpdatingGain = true;
-                value = Math.Clamp(value, -60, 10);
-                ViewModel.SetChannelGain((int)channel.Id, value);
-                if (_currentGainSlider != null)
-                {
-                    _currentGainSlider.Value = value;
-                }
-                _isUpdatingGain = false;
-            }
+            ViewModel.SetChannelGain((int)channel.Id, Math.Clamp(value, -60, 10));
+            _currentGainDrag?.Show(ViewModel.GetChannelGain(channel));
         }
+        textBox.Text = ViewModel.GetChannelGain(channel).ToString("0.00", CultureInfo.InvariantCulture);
+        _isUpdatingGain = false;
     }
 
     private void SyncGainFromViewModel(int outputIndex)
@@ -3756,8 +3755,7 @@ public sealed partial class MainWindow : Window
         {
             float gain = ViewModel.GetChannelGain(_selectedChannel);
             _isUpdatingGain = true;
-            if (_currentGainSlider != null)
-                _currentGainSlider.Value = gain;
+            _currentGainDrag?.Show(gain);
             if (_currentGainTextBox != null && _currentGainTextBox.FocusState == FocusState.Unfocused)
                 _currentGainTextBox.Text = gain.ToString("0.00", CultureInfo.InvariantCulture);
             _isUpdatingGain = false;
@@ -3776,8 +3774,7 @@ public sealed partial class MainWindow : Window
         {
             float delay = ViewModel.GetChannelDelay(_selectedChannel);
             _isUpdatingDelay = true;
-            if (_currentDelaySlider != null)
-                _currentDelaySlider.Value = delay;
+            _currentDelayDrag?.Show(delay);
             if (_currentDelayTextBox != null && _currentDelayTextBox.FocusState == FocusState.Unfocused)
                 _currentDelayTextBox.Text = delay.ToString("0.00##", CultureInfo.InvariantCulture);
             _isUpdatingDelay = false;

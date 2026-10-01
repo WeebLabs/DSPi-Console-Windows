@@ -43,18 +43,6 @@ public partial class MainViewModel
 
     private bool IsLimiterOutput(int output) => output >= 0 && output < LimiterOutputCount;
 
-    // Limiter writes go out strictly in order: ganging makes the order matter
-    // (ApplyLimiterSettings unlinks, writes, then relinks), and separate
-    // Task.Run calls may reach the bus in any order.
-    private readonly object _limiterQueueLock = new();
-    private Task _limiterQueue = Task.CompletedTask;
-
-    private void LimiterWrite(Action write)
-    {
-        lock (_limiterQueueLock)
-            _limiterQueue = _limiterQueue.ContinueWith(_ => { try { write(); } catch { } }, TaskScheduler.Default);
-    }
-
     /// <summary>Puts the limiter back to the last saved baseline, for Discard
     /// in independent mode. True when anything had changed.</summary>
     internal bool RevertLimiterTo(IReadOnlyList<LimiterOutputSettings> saved)
@@ -72,16 +60,75 @@ public partial class MainViewModel
 
     private void LimiterEdited()
     {
+        LimiterStateChanged();
+        CheckDirty();
+    }
+
+    private void LimiterStateChanged()
+    {
+        _anyLimiterEnabled = AnyLimiterEnabled;
         LimiterChanged?.Invoke(this, EventArgs.Empty);
         OnPropertyChanged(nameof(AnyLimiterEnabled));
-        CheckDirty();
+    }
+
+    /// <summary>A threshold or release during a drag: device only, clamped as
+    /// the firmware does. The setter commits it on release.</summary>
+    public void SendLimiterParamLive(int output, byte index, float value)
+    {
+        if (!IsLimiterOutput(output) || float.IsNaN(value)) return;
+        float v = index == LimiterParam.ReleaseMs ? LimiterLimits.ClampRelease(value) : LimiterLimits.ClampThreshold(value);
+        DeviceWrite(() => _device.SetLimiterParam(output, index, v));
+    }
+
+    // ── Gain-reduction meter ──
+    // Read on the 60 ms status poll, but only while a limiter icon is on screen
+    // (WatchLimiterMeter) and some limiter is on; otherwise nothing can be
+    // limiting, and the reading is cleared once rather than polled.
+
+    private int _limiterWatchers;
+    private volatile bool _anyLimiterEnabled;
+    private float[] _limiterReductionDb = Array.Empty<float>();
+
+    /// <summary>Gain reduction per output in dB (0 = none) from the last poll;
+    /// empty when not read.</summary>
+    public IReadOnlyList<float> LimiterReductionDb => _limiterReductionDb;
+
+    /// <summary>Raised on the UI thread when the reduction readings change.</summary>
+    public event EventHandler? LimiterMeterChanged;
+
+    /// <summary>A view showing live limiter state starts (true) or stops
+    /// (false) wanting the meter read.</summary>
+    public void WatchLimiterMeter(bool watching) =>
+        Interlocked.Add(ref _limiterWatchers, watching ? 1 : -1);
+
+    /// <summary>From the status poll thread.</summary>
+    private void PollLimiterMeter()
+    {
+        if (!LimiterSupported || Volatile.Read(ref _limiterWatchers) <= 0) return;
+        float[] reading;
+        if (_anyLimiterEnabled)
+        {
+            if (_device.GetLimiterMeter(_device.NumOutputChannels) is not { } gr) return;
+            reading = gr;
+        }
+        else
+        {
+            if (_limiterReductionDb.Length == 0) return;
+            reading = Array.Empty<float>();
+        }
+        if (reading.AsSpan().SequenceEqual(_limiterReductionDb)) return;
+        _dispatcher.TryEnqueue(() =>
+        {
+            _limiterReductionDb = reading;
+            LimiterMeterChanged?.Invoke(this, EventArgs.Empty);
+        });
     }
 
     public void SetLimiterEnabled(int output, bool enabled)
     {
         if (!IsLimiterOutput(output)) return;
         LimiterGang.Edit(output, _limiter, LimiterOutputCount, o => o with { Enabled = enabled });
-        LimiterWrite(() => _device.SetLimiterParam(output, LimiterParam.Enabled, enabled ? 1 : 0));
+        DeviceWrite(() => _device.SetLimiterParam(output, LimiterParam.Enabled, enabled ? 1 : 0));
         LimiterEdited();
     }
 
@@ -90,7 +137,7 @@ public partial class MainViewModel
         if (!IsLimiterOutput(output) || float.IsNaN(db)) return;
         float v = LimiterLimits.ClampThreshold(db);
         LimiterGang.Edit(output, _limiter, LimiterOutputCount, o => o with { ThresholdDb = v });
-        LimiterWrite(() => _device.SetLimiterParam(output, LimiterParam.ThresholdDb, v));
+        DeviceWrite(() => _device.SetLimiterParam(output, LimiterParam.ThresholdDb, v));
         LimiterEdited();
     }
 
@@ -99,7 +146,7 @@ public partial class MainViewModel
         if (!IsLimiterOutput(output) || float.IsNaN(ms)) return;
         float v = LimiterLimits.ClampRelease(ms);
         LimiterGang.Edit(output, _limiter, LimiterOutputCount, o => o with { ReleaseMs = v });
-        LimiterWrite(() => _device.SetLimiterParam(output, LimiterParam.ReleaseMs, v));
+        DeviceWrite(() => _device.SetLimiterParam(output, LimiterParam.ReleaseMs, v));
         LimiterEdited();
     }
 
@@ -111,7 +158,7 @@ public partial class MainViewModel
         if (!IsLimiterOutput(output)) return;
         int g = LimiterLimits.ClampLinkGroup(group);
         LimiterGang.SetGroup(output, g, _limiter, LimiterOutputCount);
-        LimiterWrite(() => _device.SetLimiterParam(output, LimiterParam.LinkGroup, g));
+        DeviceWrite(() => _device.SetLimiterParam(output, LimiterParam.LinkGroup, g));
         LimiterEdited();
     }
 
@@ -149,7 +196,7 @@ public partial class MainViewModel
         var src = _limiter[from];
         for (int k = 0; k < LimiterOutputCount; k++)
             _limiter[k] = _limiter[k] with { Enabled = src.Enabled, ThresholdDb = src.ThresholdDb, ReleaseMs = src.ReleaseMs };
-        LimiterWrite(() =>
+        DeviceWrite(() =>
         {
             _device.SetLimiterParam(LimiterParam.AllOutputs, LimiterParam.ThresholdDb, src.ThresholdDb);
             _device.SetLimiterParam(LimiterParam.AllOutputs, LimiterParam.ReleaseMs, src.ReleaseMs);
@@ -158,12 +205,21 @@ public partial class MainViewModel
         LimiterEdited();
     }
 
+    /// <summary>Sets every output's link group, one SET each in ascending order,
+    /// so each group's lowest output keeps its settings and the rest adopt them.
+    /// Outputs past the end of <paramref name="groups"/> are unlinked.</summary>
+    public void SetLimiterLinkGroups(IReadOnlyList<int> groups)
+    {
+        for (int k = 0; k < LimiterOutputCount; k++)
+            SetLimiterLinkGroup(k, k < groups.Count ? groups[k] : 0);
+    }
+
     /// <summary>Switches every output's limiter on or off with one SET.</summary>
     public void SetLimiterEnabledOnAll(bool enabled)
     {
         if (!LimiterSupported) return;
         for (int k = 0; k < LimiterOutputCount; k++) _limiter[k] = _limiter[k] with { Enabled = enabled };
-        LimiterWrite(() => _device.SetLimiterParam(LimiterParam.AllOutputs, LimiterParam.Enabled, enabled ? 1 : 0));
+        DeviceWrite(() => _device.SetLimiterParam(LimiterParam.AllOutputs, LimiterParam.Enabled, enabled ? 1 : 0));
         LimiterEdited();
     }
 
@@ -177,8 +233,7 @@ public partial class MainViewModel
         for (int k = 0; k < _limiter.Length && k < bp.Limiter.Length; k++)
             _limiter[k] = SanitizeLimiter(bp.Limiter[k]);
         LimiterGang.GangAll(_limiter, Math.Min(bp.NumOutputChannels, _limiter.Length));
-        LimiterChanged?.Invoke(this, EventArgs.Empty);
-        OnPropertyChanged(nameof(AnyLimiterEnabled));
+        LimiterStateChanged();
     }
 
     /// <summary>The audio path's own rule for stored values: NaN takes the

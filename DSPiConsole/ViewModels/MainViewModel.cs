@@ -886,6 +886,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (IsDeviceConnected)
             {
                 FetchStatus();
+                PollLimiterMeter();
                 // Re-poll the Windows USB input format ~every 2s so a channel
                 // (alt-mode) change in Sound Settings is picked up without audio.
                 if (++_audioPollCounter >= 33)
@@ -2288,7 +2289,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _channelDelays[channel] = ms;
         int outputIndex = GetOutputIndex(channel);
         if (outputIndex >= 0)
-            Task.Run(() => _device.SetOutputDelay(outputIndex, ms));
+            DeviceWrite(() => _device.SetOutputDelay(outputIndex, ms));
         OnPropertyChanged(nameof(ChannelDelays));
         if (outputIndex >= 0)
             MatrixOutputDelayChanged?.Invoke(outputIndex);
@@ -2329,7 +2330,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _channelGains[channelId] = db;
         int outputIndex = GetOutputIndex(channelId);
         if (outputIndex < 0) return;
-        Task.Run(() => _device.SetOutputGain(outputIndex, db));
+        DeviceWrite(() => _device.SetOutputGain(outputIndex, db));
         OnPropertyChanged(nameof(ChannelGains));
         MatrixOutputGainChanged?.Invoke(outputIndex);
         CheckDirty();
@@ -2876,7 +2877,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnInputPreampLDbChanged(float value)
     {
         var rounded = MathF.Round(value, 1);
-        Task.Run(() => _device.SetInputPreamp(0, rounded));
+        DeviceWrite(() => _device.SetInputPreamp(0, rounded));
         if (_masterPeqLinked && Math.Abs(InputPreampRDb - rounded) > 0.05f)
             InputPreampRDb = rounded;
         CheckDirty();
@@ -2885,7 +2886,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnInputPreampRDbChanged(float value)
     {
         var rounded = MathF.Round(value, 1);
-        Task.Run(() => _device.SetInputPreamp(1, rounded));
+        DeviceWrite(() => _device.SetInputPreamp(1, rounded));
         if (_masterPeqLinked && Math.Abs(InputPreampLDb - rounded) > 0.05f)
             InputPreampLDb = rounded;
         CheckDirty();
@@ -2919,7 +2920,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var rounded = MathF.Round(db, 1);
         if (Math.Abs(_inputPreampExtDb[wireInput - 2] - rounded) < 0.05f) return;
         _inputPreampExtDb[wireInput - 2] = rounded;
-        Task.Run(() => _device.SetInputPreamp(wireInput, rounded));
+        DeviceWrite(() => _device.SetInputPreamp(wireInput, rounded));
         InputPreampExtChanged?.Invoke(wireInput);
 
         // Mirror to the pair partner when the pair is linked (matches the L/R
@@ -2929,7 +2930,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             && Math.Abs(_inputPreampExtDb[partnerWire - 2] - rounded) > 0.05f)
         {
             _inputPreampExtDb[partnerWire - 2] = rounded;
-            Task.Run(() => _device.SetInputPreamp(partnerWire, rounded));
+            DeviceWrite(() => _device.SetInputPreamp(partnerWire, rounded));
             InputPreampExtChanged?.Invoke(partnerWire);
         }
         CheckDirty();

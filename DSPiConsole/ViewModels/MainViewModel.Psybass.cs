@@ -48,42 +48,42 @@ public partial class MainViewModel
     partial void OnPsybassEnabledChanged(bool value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassEnabled(value));
+        DeviceWrite(() => _device.SetPsybassEnabled(value));
         CheckDirty();
     }
 
     partial void OnPsybassCutoffHzChanged(float value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassCutoff(value));
+        DeviceWrite(() => _device.SetPsybassCutoff(value));
         CheckDirty();
     }
 
     partial void OnPsybassHarmonicsDbChanged(float value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassHarmonics(value));
+        DeviceWrite(() => _device.SetPsybassHarmonics(value));
         CheckDirty();
     }
 
     partial void OnPsybassDriveDbChanged(float value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassDrive(value));
+        DeviceWrite(() => _device.SetPsybassDrive(value));
         CheckDirty();
     }
 
     partial void OnPsybassCharacterPctChanged(float value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassCharacter(value));
+        DeviceWrite(() => _device.SetPsybassCharacter(value));
         CheckDirty();
     }
 
     partial void OnPsybassOriginalDbChanged(float value)
     {
         if (_psybassSuppress) return;
-        Task.Run(() => _device.SetPsybassOriginal(value));
+        DeviceWrite(() => _device.SetPsybassOriginal(value));
         CheckDirty();
     }
 
@@ -91,7 +91,7 @@ public partial class MainViewModel
     {
         if (_psybassSuppress) return;
         ushort mask = (ushort)value;
-        Task.Run(() => _device.SetPsybassMask(mask));
+        DeviceWrite(() => _device.SetPsybassMask(mask));
         CheckDirty();
     }
 

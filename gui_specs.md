@@ -367,3 +367,8 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **Chip and card**: 110 px wide, #EB1C1C20 with a 1 px #1AFFFFFF edge, 8 px radius; header 17 px at y 4, rule at y 24, value rows 15 px from y 28; values Cascadia Code 11, labels 9.5 at 45 % white
 - **Readouts**: 16 px labels, #EB17171C, 4 px radius, Cascadia Code 10 semibold, at the bottom edge (frequency) and left edge (gain)
 - **Graph options**: the gear at the graph's top right (`GraphOptionsPanel`), 280 px, a main page and a Graph Setup page
+
+## Output Limiter (MainWindow.Limiter.cs, Controls/OutputLimiterSettings.cs)
+
+- **Icon** (`Controls/LimiterIcon.cs`): 19 px gauge glyph under the output card's mute button, 1.5 px round strokes and a filled hub; secondary text colour when off, `SystemAccentColor` when on, #FF9F0A while gain reduction is 0.05 dB or more; opacity 0.5 while disconnected. Right-click opens `OutputLimiterSettings` (320 px, padding 16) in a flyout to the left
+- **Settings rows** use `ParameterRow` (`Controls/ParameterRow.cs`): title 12 medium, subtitle 9, a 60 px value field with its unit, end labels 9; a drag sends live values through `SliderDrag` and commits once on release

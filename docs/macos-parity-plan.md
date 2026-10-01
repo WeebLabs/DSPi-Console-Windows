@@ -13,8 +13,9 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 |---|---|
 | 0 Groundwork | Done, committed 44cb85e on `graph-editing` |
 | 1 On-graph editing | Done, committed 44cb85e and f052be0; tried on hardware |
-| 2 Protocol V32 and versioning | Done 2026-10-02, committed on `firmware-v32-catchup` |
-| 3-8 | Not started |
+| 2 Protocol V32 and versioning | Done 2026-10-02, committed 869778f on `firmware-v32-catchup` |
+| 3.1 ParameterRow, 3.2 Limiter | Done 2026-10-03, committed on `tool-controls`; hardware test pending |
+| 3.3, 3.4, 4-8 | Not started |
 
 Notes from doing Phases 0 and 1:
 - **Delay limits:** the firmware's real limits are 42 ms (RP2350) and 21 ms (RP2040). The delay line is 2048 or 1024 samples at 48 kHz, since firmware 9ec0ca1. The macOS Console's 85 ms / 42 ms is stale too.

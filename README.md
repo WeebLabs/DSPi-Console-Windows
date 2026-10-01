@@ -226,6 +226,24 @@ opacity, line width, glow and phase) and **Pop Out Graph**.
 - Family, type and slope are chosen from separate pickers, which reduces the common case (a Linkwitz-Riley
   fourth-order pair at a given frequency) to a small number of selections.
 
+### Output limiter
+
+Each output has a brickwall lookahead peak limiter (firmware 1.1.6 beta 4 or later). Its icon, a gauge with a
+needle, sits under the mute button on the output's page: grey when off, the accent colour when on, and orange while
+it is reducing gain. Click the icon to switch the limiter on or off; right-click it for the settings.
+
+- **Threshold:** the ceiling in dBFS, from -30 to 0 (default -1, which leaves room for the overshoot a DAC can
+  produce between samples). The limiter runs after every gain stage, so no sample leaves the output above it.
+- **Release:** how fast the gain recovers after a peak, 10 to 1000 ms (default 100).
+- **Link group:** outputs in the same group (1 to 4) act as one limiter. They share on/off, threshold and release,
+  and each applies the deepest reduction any of them needs, so a stereo image cannot shift. An output joining a
+  group takes on its settings.
+- **Copy to all outputs** gives every output this one's settings, leaving the groups alone; **All outputs** links
+  every stereo pair, unlinks them all, or switches every limiter off.
+
+While any limiter is on, every output is delayed by 32 samples. The limiter settings follow the same persistence
+setting as the output pins: saved with the preset, or kept device-wide and saved with Save Output Config.
+
 ### Matrix mixer
 
 - A full routing matrix from every input channel to every output channel, with independent gain and phase invert
