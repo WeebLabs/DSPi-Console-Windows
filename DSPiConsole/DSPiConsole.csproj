@@ -50,6 +50,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The firmware this Console installs (Tools > Update Firmware), one image per
+         chip, named DSPi-<chip>-v<version>.uf2. Refresh them with every version bump:
+         the installer refuses an image whose version is not the app's. -->
+    <Content Include="Firmware\*.uf2">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="autoeq_database.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

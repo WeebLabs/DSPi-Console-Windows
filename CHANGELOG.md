@@ -2,6 +2,13 @@
 
 ## 2026-10-03
 
+### Firmware update
+- File > Update Firmware installs the firmware that ships with this Console: click Update Firmware and the device restarts into its bootloader, the firmware for its chip is written, and the window waits for the device to come back and confirms the version it reports; a board already in bootloader mode (BOOTSEL held while plugging in) is found on its own
+- The window shows this Console's version beside the connected device's, warns when the update would be a downgrade, offers Export Configuration first, and steps through Prepare, Write, Verify and Done, with Try Again and Update Another Board
+- It refuses to choose between two boards in bootloader mode, and refuses to install firmware that does not match this Console
+- "Enter bootloader mode without installing" remains, for flashing a build of your own
+- The firmware mismatch banner's Update and Details buttons open the window
+
 ### Upmixer, matrix mixer, signal generator, statistics and interrupt monitor
 - Upmixer: a STATUS line (Active, Idle with its reason, or No device) with live centre and surround gauges shown only while it runs; the Mac's labels and sections, and a stage that is Off hides its settings
 - Matrix mixer: gain and INV show only on connected crosspoints, an active INV is orange; outputs that PDM would take over carry orange rings, and the PDM prompt names the outputs and says Enable PDM or Disable PDM; crosspoints of disabled outputs are dimmed but still clickable; delays stop at the device's limit; an output header's right-click menu has Identify, Rename, Copy Parameters and Paste Parameters; with more than two inputs, each input row has a trim, and the routing bar has Direct 1:1 and Clear; the table scrolls when it outgrows the screen

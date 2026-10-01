@@ -4822,6 +4822,13 @@ public sealed partial class MainWindow : Window
 
     private async void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
+        // Quitting mid-write would leave the board half flashed, in bootloader mode.
+        if (_firmwareUpdateWindow?.IsWriting == true)
+        {
+            args.Cancel = true;
+            _firmwareUpdateWindow.Activate();
+            return;
+        }
         if (_closeConfirmed) return;
 
         if (!ViewModel.PresetsDirty || !ViewModel.IsDeviceConnected)
@@ -5387,23 +5394,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void OnUpdateFirmwareClick(object sender, RoutedEventArgs e)
-    {
-        var dialog = new ContentDialog
-        {
-            Title = "Firmware Update",
-            Content = "This will reboot the device into bootloader mode.\n\nAudio output will stop immediately. The device will appear as a USB drive to which you can drag a .uf2 firmware file.",
-            PrimaryButtonText = "Reboot into Bootloader",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = Content.XamlRoot
-        };
-
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        if (!ViewModel.IsDeviceConnected) return;
-
-        _ = Task.Run(() => ViewModel.Device.EnterBootloaderMode());
-    }
+    private void OnUpdateFirmwareClick(object sender, RoutedEventArgs e) => ShowFirmwareUpdate();
 
     private void OnExitClick(object sender, RoutedEventArgs e)
     {

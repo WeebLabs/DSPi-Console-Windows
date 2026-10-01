@@ -74,26 +74,27 @@ Console releases on [this repository's releases page](https://github.com/WeebLab
 - The [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0). The Windows App SDK is bundled
   with the application, so this is the only prerequisite you need to install yourself.
 
-### 2. Install Firmware
-
-If your device is new, or if you are updating to match a new Console release:
-
-1. Download the `.uf2` Firmware image for your board from the
-   [DSPi releases page](https://github.com/WeebLabs/DSPi/releases). RP2040 and RP2350 builds are separate files;
-   ensure you select the one that matches your board.
-2. Put the board into bootloader mode. On a new board, hold the BOOTSEL button while connecting it to USB. If
-   DSPi is already running and Console can see the device, use **File > Update Firmware**, which reboots it into
-   the bootloader without requiring physical access to the button.
-3. The board appears as a removable drive named `RPI-RP2` or similar. Copy the `.uf2` file onto it. The board
-   reboots automatically once the copy completes.
-
-### 3. Install Console
+### 2. Install Console
 
 1. Download the latest `DSPi.Console.v<version>.zip` from the
-   [releases page](https://github.com/WeebLabs/DSPi-Console-Windows/releases), choosing the release that matches
-   your Firmware version.
+   [releases page](https://github.com/WeebLabs/DSPi-Console-Windows/releases).
 2. Extract the archive to a location of your choosing. The application is portable and requires no installer.
 3. Run `DSPiConsole.exe`.
+
+### 3. Install Firmware
+
+Console carries the Firmware of its own version and installs it for you. Use this for a new board, or whenever
+Console reports that the device's Firmware does not match it.
+
+1. Open **File > Update Firmware**.
+2. If the device is already running DSPi and Console can see it, click **Update Firmware**: the device restarts
+   into its bootloader on its own. For a new board, hold the BOOTSEL button while connecting it to USB.
+3. Console finds the board, writes the Firmware for its chip (RP2040 or RP2350), waits for it to restart, and
+   confirms the version it reports. Near the end the board's drive disappears; that is normal, so leave it plugged in.
+
+Before updating, **Export Configuration** saves the device's current settings to a preset file. To flash a build of
+your own, the same window has a link that restarts the device into its bootloader without installing anything; the
+board then appears as a removable drive named `RPI-RP2` (RP2040) or `RP2350`, and a `.uf2` copied onto it is installed.
 
 ### 4. Connect
 
@@ -492,7 +493,7 @@ Windows uses for playback.
 
 **Controls or entire windows are missing.** Console hides any feature for which the connected device's Firmware
 does not report support. This is almost always a version mismatch: confirm that the Firmware version matches the
-Console version, including any beta or hotfix suffix.
+Console version, including any beta or hotfix suffix. **File > Update Firmware** installs the matching version.
 
 **The device is not detected at all.** Verify that the cable carries data, that the device enumerates as a USB
 audio interface in the Windows sound settings, and that Firmware has finished flashing (a board left in

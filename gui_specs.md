@@ -393,6 +393,15 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **System Statistics** (`StatsWindow.cs`, 980 x 620): columns of 16 px padding, section labels 10 bold secondary; counters coloured once nonzero (overruns #FF9F0A, underruns #FF453A); buffer rows 48 px with a `Controls/BufferFillTrace.cs` trace (256 samples, watermark band at 14 %, dashed 50 % guide, 1.25 px trace, PDM ring dashed); third column only when an optional input or interface applies; footer with a connection dot and "Updated every 2 seconds"
 - **Interrupt Monitor** (`InterruptMonitorWindow.cs`, 900 x 560): toolbar with Pause/Resume (Ctrl+P), Clear (Ctrl+K), Auto-scroll, Show IDLE, Show raw bytes, and at the right the state (Listening #30D158, Paused #FF9F0A, Inactive secondary) and event count; the log in Cascadia Code 11 pt, selectable, no wrap; footer with packet and hidden-IDLE counts; decode in `DSPiConsole.Core/NotifyDecoder.cs`
 
+## Firmware Update (FirmwareUpdateWindow.cs)
+
+- 480 x 540, header (22 px accent glyph, "Firmware Update" 14 semibold, "Install firmware <version> onto a DSPi board" 10 secondary), body 16 px padding, 14 px between rows; cards 8 px corners, `PanelColor` fill, 1 px border grey at 20 %
+- Version summary card: rows with a 120 px label column (9 bold secondary, upper case) and the value in 11 pt Cascadia medium; downgrade note in #FF9F0A with a link to the Console releases
+- Step strip: four 14 px dots in 52 px columns (done and current in the accent, Done reached in #30D158, white check on passed steps), 2 px connectors (accent at 60 % or grey at 20 %), 9 pt labels (current bold); 40 % opacity on a failure
+- Status card: a still glyph when the next move is the user's, a ProgressRing when the app or board is working; title 13 semibold, message 11 secondary centred, at most 340 px; the writing card has a percentage, a progress bar, Board and Firmware rows and the restart note
+- Below the card: the BOOTSEL hint, or the "Enter bootloader mode without installing" link while a running device is connected; button row Cancel / Export Configuration... / primary (accent), or Update Another Board / Done
+- Installer: `DSPiConsole.Core/Firmware` (state machine, bundled image, errors); `DSPiConsole.Usb/SystemBootloaderLocator.cs` (SetupAPI VID 0x2E8A PID 0x0003/0x000F, drive by label RPI-RP2 / RP2350, 1 s scan)
+
 ## Subharmonic Synthesizer (SubharmonicSynthWindow.cs)
 
 - 900 x 660 window, header (accent icon, title 14 semibold, subtitle 10, SOLO pill #FF9F0A when on, enable switch), two columns of 16 px padding with a 1 px divider

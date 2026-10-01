@@ -39,48 +39,22 @@ public sealed partial class MainWindow
         if (args.Reason == InfoBarCloseReason.CloseButton) _firmwareBarHiddenThisSession = true;
     }
 
-    private async void OnFirmwareMismatchActionClick(object sender, RoutedEventArgs e)
-    {
-        string device = ViewModel.DeviceFirmwareVersion?.ToString() ?? "unknown";
-        var expected = AppInfo.ExpectedFirmware;
-        bool newer = ViewModel.FirmwareMatch == FirmwareMatch.DeviceNewer;
+    private void OnFirmwareMismatchActionClick(object sender, RoutedEventArgs e) => ShowFirmwareUpdate();
 
-        var dialog = new ContentDialog
+    private FirmwareUpdateWindow? _firmwareUpdateWindow;
+
+    /// <summary>Tools › Update Firmware and the banner's button. A fresh window
+    /// each time it opens, so a finished run never reappears; a second request
+    /// while it is open brings it forward.</summary>
+    private void ShowFirmwareUpdate()
+    {
+        if (_firmwareUpdateWindow != null)
         {
-            XamlRoot = Content.XamlRoot,
-            CloseButtonText = "Close",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        if (newer)
-        {
-            dialog.Title = "Newer firmware";
-            dialog.Content = $"This device runs firmware {device}, but this DSPi Console is {expected}. "
-                + "Controls for features added since then are not shown, and settings this version does not "
-                + "know about are left alone.\n\nInstall the DSPi Console release that matches the firmware, "
-                + "or install firmware " + expected + " on the device.";
-            dialog.PrimaryButtonText = "Open Console Releases";
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-                await Windows.System.Launcher.LaunchUriAsync(new Uri(AppInfo.ConsoleReleasesUrl));
+            _firmwareUpdateWindow.Activate();
             return;
         }
-
-        string? tag = expected?.TagSuffix is { } t ? "v" + t : null;
-        dialog.Title = "Update firmware";
-        dialog.Content = $"This device runs firmware {device}; DSPi Console expects {expected}.\n\n"
-            + $"Download the {expected} firmware for this board from the firmware releases page, then reboot "
-            + "the device into its bootloader. It appears as a USB drive: copy the .uf2 file onto it and it "
-            + "restarts with the new firmware.\n\nRebooting stops audio output immediately.";
-        dialog.PrimaryButtonText = "Open Firmware Releases";
-        dialog.SecondaryButtonText = "Reboot into Bootloader";
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
-        {
-            string url = tag != null ? $"{AppInfo.FirmwareReleasesUrl}/tag/{tag}" : AppInfo.FirmwareReleasesUrl;
-            await Windows.System.Launcher.LaunchUriAsync(new Uri(url));
-        }
-        else if (result == ContentDialogResult.Secondary && ViewModel.IsDeviceConnected)
-        {
-            _ = Task.Run(() => ViewModel.Device.EnterBootloaderMode());
-        }
+        _firmwareUpdateWindow = new FirmwareUpdateWindow(ViewModel, () => OnExportPresetClick(this, new RoutedEventArgs()));
+        _firmwareUpdateWindow.Closed += (_, _) => _firmwareUpdateWindow = null;
+        _firmwareUpdateWindow.Activate();
     }
 }
