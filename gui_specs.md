@@ -357,7 +357,7 @@ Most use `TextFillColorSecondaryBrush` - change the brush definition in `App.xam
 A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/GraphEditing/PeqGraphEditor.cs` (unit-tested in `DSPiConsole.Core.Tests`); `PeqGraphEditorView` hosts it over the plot rect of `BodePlotControl` and draws with Win2D (`PeqGraphRenderer`).
 
 - **Band colours**: `PeqBandPalette`, ten soft hues (coral, orange, amber, sage, teal, sky, periwinkle, lavender, rose, clay), shared with the band list's bypass dot and number
-- **Dots**: flat discs, radius 5, 6.5 on hover, +0.5 selected; a selected dot grows a 2.2 px centre in the graph background colour (#262629)
+- **Dots**: flat discs, radius 5, 6.5 on hover, +0.5 selected; a selected dot grows a 2.2 px centre in the graph background colour (#262626)
 - **Fills**: every band's lobe at 0.22 opacity (0.42 hovered or selected), fading to nothing at 0 dB column by column; outline 1.25 px at 0.9 when hovered or selected, dissolving within 10 px of 0 dB
 - **Band list rows**: a band hovered on the graph tints its row 18 % toward the band colour with a 2 px left bar at 55 % opacity; a selected band tints 24 % with the bar at full colour
 - **Level offset**: with "Gain affects displayed level" on, the curve includes the channel's output gain or input preamp, and the dots, fills, fill baseline and hit areas are drawn on axes shifted by the same amount; chip and list values stay the band's own, and the pointer readout shows the axis level

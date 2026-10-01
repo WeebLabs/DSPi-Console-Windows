@@ -35,7 +35,7 @@ public sealed class PeqGraphEditorView : UserControl
     private static extern uint GetDoubleClickTime();
 
     /// <summary>The graph's backdrop as it appears, for a selected dot's centre.</summary>
-    private static readonly Color GraphBackground = Color.FromArgb(255, 38, 38, 41);
+    private static readonly Color GraphBackground = Color.FromArgb(255, 38, 38, 38);
 
     private readonly IPeqEditorHost _host;
     private readonly Grid _root = new() { Background = new SolidColorBrush(Colors.Transparent) };

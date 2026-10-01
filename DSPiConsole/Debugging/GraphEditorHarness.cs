@@ -38,7 +38,7 @@ public sealed class GraphEditorHarness : Window, IPeqEditorHost
         _view = new PeqGraphEditorView(this) { Width = 860, Height = 300 };
         var card = new Border
         {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 38, 38, 41)),
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 38, 38, 38)),
             CornerRadius = new CornerRadius(8),
             Child = _view,
             HorizontalAlignment = HorizontalAlignment.Left,

@@ -146,7 +146,7 @@ public sealed partial class BodePlotControl : UserControl
     {
         _rootGrid = new Grid
         {
-            Background = new SolidColorBrush(Color.FromArgb(128, 32, 32, 36))
+            Background = new SolidColorBrush(Color.FromArgb(128, 32, 32, 32))
         };
 
         _plotCanvas = new Canvas();
