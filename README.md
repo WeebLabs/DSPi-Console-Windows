@@ -47,7 +47,9 @@ a release is compatible with a wider range of versions, it will say so.
 
 Console degrades gracefully where it can. It probes the device for each capability at connection time and hides
 the controls the connected device's Firmware cannot support, rather than issuing commands the device would reject.
-This behaviour is a mitigation, not a substitute for matched versions.
+This behaviour is a mitigation, not a substitute for matched versions. When the connected device's Firmware differs
+from the version Console expects, a banner across the top of the window says so and links to the matching release;
+it can be hidden until Console is next started.
 
 Firmware releases are published in the [DSPi Firmware repository](https://github.com/WeebLabs/DSPi/releases), and
 Console releases on [this repository's releases page](https://github.com/WeebLabs/DSPi-Console-Windows/releases).

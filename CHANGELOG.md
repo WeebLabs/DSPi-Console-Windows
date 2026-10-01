@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-02
+
+### Firmware 1.1.6 beta 4 groundwork
+- Reads the subharmonic synthesizer, tube modeller and output limiter settings from the device, keeps them in step with changes made elsewhere, and tracks them for unsaved changes; their controls come in a later release
+- A banner appears when the device's firmware differs from the version this Console expects, with a way to the matching firmware or Console release; it can be hidden for the session
+- Preset files carry the subharmonic synthesizer, the tube modeller, each output's limiter (applied with the hardware option, as the firmware keeps it with the wiring) and the input channels' delays, and write an output's delay the way the macOS Console does, so files from the macOS Console keep them through a Windows save
+- Unsaved-changes tracking now covers psychoacoustic bass, the volume leveller's main settings, the preamps of inputs 3 to 8 and the input channels' delays
+- Control Surfaces names the new parameters for the subharmonic synthesizer, the tube modeller and the output limiter
+- Development builds carry the app version (1.1.6-beta4)
+
 ## 2026-10-01
 
 ### On-Graph Filter Editing (macOS design)

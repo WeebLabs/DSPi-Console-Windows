@@ -2935,6 +2935,10 @@ public sealed partial class MainWindow : Window
             {
                 case nameof(MainViewModel.IsDeviceConnected):
                     UpdateConnectionStatus();
+                    UpdateFirmwareMismatchBar();
+                    break;
+                case nameof(MainViewModel.FirmwareMatch):
+                    UpdateFirmwareMismatchBar();
                     break;
                 case nameof(MainViewModel.ActiveInputChannelCount):
                     // The number of USB input channels changed (Windows format /

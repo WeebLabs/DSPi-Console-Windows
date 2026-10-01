@@ -1012,7 +1012,7 @@ public sealed partial class ControlSurfacesPanel
         // check: the card's Apply button is enabled from it.
         if (action is CsAction.Inc or CsAction.Dec)
         {
-            string label = nd.Unit is CsUnit.Hz or CsUnit.Q ? "Step (octaves)"
+            string label = CsWire.UnitStepsInOctaves(nd.Unit) ? "Step (octaves)"
                 : nd.Unit == CsUnit.None ? "Step (positions)" : StepLabel(nd.Unit);
             var box = NumberField(CsWire.DecodeStep(draft.Step, nd.Unit), CsUnit.None, v =>
             {

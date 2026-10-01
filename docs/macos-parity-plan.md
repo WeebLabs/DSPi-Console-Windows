@@ -11,15 +11,24 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 
 | Phase | State |
 |---|---|
-| 0 Groundwork | Done 2026-10-01, uncommitted |
-| 1 On-graph editing | Done 2026-10-01, uncommitted, not yet tried on hardware |
-| 2-8 | Not started |
+| 0 Groundwork | Done, committed 44cb85e on `graph-editing` |
+| 1 On-graph editing | Done, committed 44cb85e and f052be0; tried on hardware |
+| 2 Protocol V32 and versioning | Done 2026-10-02, committed on `firmware-v32-catchup` |
+| 3-8 | Not started |
 
 Notes from doing Phases 0 and 1:
 - **Delay limits:** the firmware's real limits are 42 ms (RP2350) and 21 ms (RP2040). The delay line is 2048 or 1024 samples at 48 kHz, since firmware 9ec0ca1. The macOS Console's 85 ms / 42 ms is stale too.
 - **Device-switch prompt:** the unsaved-preset prompt already existed. Only the pending-Settings prompt was missing.
 - **Editor structure:** the editor's behaviour is a pure class, `DSPiConsole.Core/GraphEditing/PeqGraphEditor.cs`, tested by `DSPiConsole.Core.Tests`.
 - **Debug harness:** Debug builds open an editor harness with sample bands, so the editor can be tried without a device. Set `DSPI_EDITOR_HARNESS=1` before launching.
+- **Echoed writes:** the firmware applies an EQ write in its main loop and reports it tagged UNKNOWN, not HOST_SET, so the app's own writes came back as foreign changes. `DspDevice` now drops echoes of its own filter writes.
+
+Notes from doing Phase 2:
+- **State without controls:** subharm, tube and limiter state, fetch, bulk seeding, notifications, presets and dirty tracking are in place (`MainViewModel.Subharm/Tube/Limiter.cs`). Phase 3 adds the windows and the channel-page limiter.
+- **Limiter is IO-block state:** it follows `output_config_mode` like the pins (output_limiter_spec.md §5.1), so it sits in the snapshot's IO block, is saved by Save Output Config in independent mode, and Discard restores it through the gang-safe apply. Limiter writes go through one ordered queue.
+- **Delays:** on an output, the channel delay (0x48) and the output delay (0x78) are one value in the firmware: the output-delay SET writes both and the DSP reads the channel delay. Only the inputs have a delay of their own, which Windows never read. It is now read, tracked and carried by preset files (`delayMs`, with outputs also written as `outputDelayMs` like the Mac); it still has no control.
+- **Versioning:** the csproj carries `<Version>1.1.6-beta4</Version>`; `AppInfo.ExpectedFirmware` derives from it. The banner's Update action explains and links to the release until the Phase 6 installer exists.
+- **Aux-output nouns** (caps v17/v18) are named but hidden from the Control Surfaces picker until Phase 7.
 
 ## How far behind Windows is
 

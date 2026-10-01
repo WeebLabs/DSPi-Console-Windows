@@ -5,22 +5,20 @@ namespace DSPiConsole.Usb;
 
 /// <summary>
 /// Parsed result from a bulk parameter fetch (REQ_GET_ALL_PARAMS, 0xA0 /
-/// chunked 0xA2). Wire format V24 (firmware 1.1.x+, unified channel model).
+/// chunked 0xA2), wire formats V16 to V32 (unified channel model).
 ///
 /// V16 broke bulk-params backward compatibility with no migration: inputs are
-/// now first-class channels (no "master"), and the channel index space is
+/// first-class channels (no "master"), and the channel index space is
 /// [ inputs 0..NumInputChannels-1 ][ outputs NumInputChannels..NumChannels-1 ].
-/// The firmware rejects any payload whose format_version != 24 or whose length
-/// != sizeof(WireBulkParams) (5900), so there are no legacy size anchors or
-/// per-section version gates anymore — every section is always present.
 ///
-/// V17..V24 only reinterpreted previously-reserved bytes in place or appended a
-/// tail, so every offset ≤ 5875 is unchanged from V16. The deltas since V20:
-/// V21 = I2S clock master/slave mode (input-config byte), V22 = Linkwitz Transform
-/// target Q in each EQ band's reserved bytes, V23 = 24-byte psybass section
-/// appended (→ 5900), V24 = ADAT input pin/enable/clock (input-config bytes). The
-/// I2S clock-pin unified/split fields live in the I2S-config section and were
-/// claimed from reserved space without a wire bump.
+/// Every later version only reinterpreted reserved bytes in place or appended
+/// a section, so every offset of an older image is unchanged in a newer one:
+/// V21 I2S clock mode, V22 Linkwitz Transform Q in the EQ reserved bytes, V23
+/// psybass (→ 5900), V24 ADAT input, V25/V26 upmixer (→ 5944), V28 a fourth
+/// S/PDIF input inside the input-config section, V29 subharm (→ 5960), V30 its
+/// extension (→ 5980), V31 tube (→ 6028) and V32 the output limiter (→ 6136).
+/// Each appended section is parsed only when the version and the length both
+/// say it is there, and flagged with its Has* field.
 /// </summary>
 public class BulkParams
 {
@@ -178,6 +176,45 @@ public class BulkParams
     // is present but zero.
     public UpmixConfig? Upmix;
     public bool HasUpmix;
+
+    // ── Subharmonic synthesizer (offset 5944) — 16 bytes V29, 36 bytes V30+ ──
+    // Solo is runtime-only and never on the wire.
+    public bool SubharmEnabled;
+    public ushort SubharmOutputMask;
+    public float SubharmLowDb;
+    public float SubharmHighDb;
+    public float SubharmBoostDb;
+    public bool HasSubharm;
+    // V30 tail
+    public float SubharmTopDb;
+    public float SubharmSelectDepthPct;
+    public float SubharmSelectHoldMs;
+    public float SubharmCeilingDb;
+    public byte SubharmSelectMode;
+    public bool SubharmLinkPairs;
+    public bool HasSubharmExtended;
+
+    // ── Tube modeller (offset 5980, 48 bytes) — appended V31+ ──
+    public bool TubeEnabled;
+    public byte TubeType;
+    public byte TubeRectifier;
+    public bool TubeXfmrEnabled;
+    public ushort TubeOutputMask;
+    public float TubeDriveDb;
+    public float TubeBiasPct;
+    public float TubeAsymDb;
+    public float TubeHardnessPct;
+    public float TubeSagPct;
+    public float TubeXfmrDamping;
+    public float TubeXfmrResHz;
+    public float TubeMixPct;
+    public float TubeTrimDb;
+    public bool HasTube;
+
+    // ── Output limiter (offset 6028, 108 bytes) — appended V32+ ──
+    // One entry per wire output slot (9); entries past NumOutputChannels are zero.
+    public LimiterOutputSettings[] Limiter = Array.Empty<LimiterOutputSettings>();
+    public bool HasLimiter;
 }
 
 /// <summary>
@@ -190,7 +227,7 @@ public static class BulkParamsParser
 {
     // Wire-format maximums (must match firmware bulk_params.h WIRE_MAX_* defines).
     internal const int WireMaxInputChannels = 8;
-    internal const int WireMaxOutputChannels = 9;
+    public const int WireMaxOutputChannels = 9;
     internal const int WireMaxChannels = 17;     // inputs + outputs
     internal const int WireMaxBands = 12;
     internal const int WireMaxXoverBands = 4;
@@ -200,9 +237,13 @@ public static class BulkParamsParser
 
     public const int PacketSizeV20 = 5876;       // sizeof(WireBulkParams) at V20
     public const int PacketSizeV24 = 5900;       // sizeof(WireBulkParams) at V24 (+psybass)
-    public const int PacketSizeV26 = 5944;       // sizeof(WireBulkParams) at V25-V27 (+upmix)
+    public const int PacketSizeV26 = 5944;       // sizeof(WireBulkParams) at V25-V28 (+upmix)
+    public const int PacketSizeV29 = 5960;       // + 16-byte subharm section
+    public const int PacketSizeV30 = 5980;       // subharm section grows to 36 bytes
+    public const int PacketSizeV31 = 6028;       // + 48-byte tube section
+    public const int PacketSizeV32 = 6136;       // + 108-byte limiter section
     public const byte MinFormatVersion = 16;     // unified channel model floor
-    public const byte CurrentFormatVersion = 28; // V28: fourth selectable S/PDIF input
+    public const byte CurrentFormatVersion = 32; // V32: output limiter
 
     /// <summary>Number of spdif_rx_pin_ext entries in WireInputConfig for a given
     /// wire version. V28 grew it from 2 to 3 (S/PDIF 4), which shifts every field
@@ -244,6 +285,13 @@ public static class BulkParamsParser
     public const int OffsetAdat = 5868;         // 8
     public const int OffsetPsybass = 5876;       // 24 (appended V23+)
     public const int OffsetUpmix = 5900;        // 44 (appended V25+; presence byte V26)
+    public const int OffsetSubharm = 5944;      // 16 (V29), 36 (V30+)
+    public const int OffsetTube = 5980;         // 48 (appended V31+)
+    public const int OffsetLimiter = 6028;      // 108 (9 × 12, appended V32+)
+    public const int SubharmSizeV29 = 16;
+    public const int SubharmSizeV30 = 36;
+    public const int TubeSize = 48;
+    public const int LimiterSize = WireMaxOutputChannels * LimiterOutputSettings.WireSize;
 
     public static BulkParams? Parse(byte[] buffer)
     {
@@ -482,6 +530,62 @@ public static class BulkParamsParser
         {
             p.Upmix = UpmixConfig.FromBytes(buffer, OffsetUpmix);
             p.HasUpmix = p.Upmix != null;
+        }
+
+        // Each tail section is read only when both the version says it exists
+        // and the payload carries it, so a short or older image never reads
+        // the next section's bytes as this one.
+
+        // ── Subharmonic synthesizer (V29: 16 bytes; V30: 36 bytes) ──
+        if (p.FormatVersion >= 29 && buffer.Length >= PacketSizeV29)
+        {
+            int o = OffsetSubharm;
+            p.HasSubharm = true;
+            p.SubharmEnabled = buffer[o] != 0;
+            p.SubharmOutputMask = BitConverter.ToUInt16(buffer, o + 2);
+            p.SubharmLowDb = BitConverter.ToSingle(buffer, o + 4);
+            p.SubharmHighDb = BitConverter.ToSingle(buffer, o + 8);
+            p.SubharmBoostDb = BitConverter.ToSingle(buffer, o + 12);
+            if (p.FormatVersion >= 30 && buffer.Length >= PacketSizeV30)
+            {
+                p.HasSubharmExtended = true;
+                p.SubharmTopDb = BitConverter.ToSingle(buffer, o + 16);
+                p.SubharmSelectDepthPct = BitConverter.ToSingle(buffer, o + 20);
+                p.SubharmSelectHoldMs = BitConverter.ToSingle(buffer, o + 24);
+                p.SubharmCeilingDb = BitConverter.ToSingle(buffer, o + 28);
+                p.SubharmSelectMode = (byte)Math.Min((int)buffer[o + 32], SubharmSelectMode.Max);
+                p.SubharmLinkPairs = buffer[o + 33] != 0;
+            }
+        }
+
+        // ── Tube modeller (48 bytes, V31+) ──
+        if (p.FormatVersion >= 31 && buffer.Length >= PacketSizeV31)
+        {
+            int o = OffsetTube;
+            p.HasTube = true;
+            p.TubeEnabled = buffer[o] != 0;
+            p.TubeType = (byte)Math.Min((int)buffer[o + 1], TubeLimits.TypeMax);
+            p.TubeRectifier = (byte)Math.Min((int)buffer[o + 2], TubeLimits.RectifierMax);
+            p.TubeXfmrEnabled = buffer[o + 3] != 0;
+            p.TubeOutputMask = BitConverter.ToUInt16(buffer, o + 4);
+            p.TubeDriveDb = BitConverter.ToSingle(buffer, o + 8);
+            p.TubeBiasPct = BitConverter.ToSingle(buffer, o + 12);
+            p.TubeAsymDb = BitConverter.ToSingle(buffer, o + 16);
+            p.TubeHardnessPct = BitConverter.ToSingle(buffer, o + 20);
+            p.TubeSagPct = BitConverter.ToSingle(buffer, o + 24);
+            p.TubeXfmrDamping = BitConverter.ToSingle(buffer, o + 28);
+            p.TubeXfmrResHz = BitConverter.ToSingle(buffer, o + 32);
+            p.TubeMixPct = BitConverter.ToSingle(buffer, o + 36);
+            p.TubeTrimDb = BitConverter.ToSingle(buffer, o + 40);
+        }
+
+        // ── Output limiter (9 × 12 bytes, V32+) ──
+        if (p.FormatVersion >= 32 && buffer.Length >= PacketSizeV32)
+        {
+            p.HasLimiter = true;
+            p.Limiter = new LimiterOutputSettings[WireMaxOutputChannels];
+            for (int k = 0; k < WireMaxOutputChannels; k++)
+                p.Limiter[k] = LimiterOutputSettings.FromBytes(buffer, OffsetLimiter + k * LimiterOutputSettings.WireSize);
         }
 
         return p;

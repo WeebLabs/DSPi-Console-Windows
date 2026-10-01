@@ -71,6 +71,14 @@ public static class VendorCommands
     public const byte GetOutputPin = 0x7D;
     public const byte GetSerial   = 0x7E;
     public const byte GetPlatform = 0x7F;
+    /// <summary>64-byte provenance blob: [0..47] git describe, [48..59] build
+    /// date. For people only; nothing may gate on it.</summary>
+    public const byte GetBuildInfo = 0x80;
+    /// <summary>Core 1 mode (0 idle, 1 PDM, 2 EQ worker), 1 byte.</summary>
+    public const byte GetCore1Mode = 0x7A;
+    /// <summary>wValue = output: 1 when enabling it would collide with Core 1's
+    /// other use (PDM against the EQ workers), 1 byte.</summary>
+    public const byte GetCore1Conflict = 0x7B;
     public const byte ClearClips = 0x83;
     public const byte GetAllParams = 0xA0;
     public const byte GetAllParamsChunk = 0xA2; // chunked GET (WinUSB 4 KB control cap)
@@ -108,6 +116,48 @@ public static class VendorCommands
     public const byte GetPsybassOriginal  = 0x3B;
     public const byte SetPsybassMask      = 0x3C; // OUT 2-byte uint16 LE (per-output)
     public const byte GetPsybassMask      = 0x3D;
+
+    // Subharmonic synthesizer (subharm, wire V29; extended V30). A dbx-style
+    // octave divider: one global parameter set applied per output channel
+    // selected by a 16-bit mask, like psybass. Levels are 4-byte LE floats,
+    // enable/select/link/solo 1 byte, the mask 2 bytes LE. Solo is runtime-only.
+    // The block spans 0x10-0x1F, 0x2C-0x2F and 0xA9-0xAE.
+    public const byte SetSubharm          = 0x10; // OUT 1 byte bool
+    public const byte GetSubharm          = 0x11;
+    public const byte SetSubharmLow       = 0x12; // OUT float dB, 24-36 Hz band
+    public const byte GetSubharmLow       = 0x13;
+    public const byte SetSubharmHigh      = 0x14; // OUT float dB, 36-56 Hz band
+    public const byte GetSubharmHigh      = 0x15;
+    public const byte SetSubharmBoost     = 0x16; // OUT float dB, 70 Hz LF boost
+    public const byte GetSubharmBoost     = 0x17;
+    public const byte SetSubharmMask      = 0x18; // OUT uint16 LE output mask
+    public const byte GetSubharmMask      = 0x19;
+    public const byte GetSubharmHeadroom  = 0x1A; // IN float dB: worst-case gain, live
+    public const byte SetSubharmTop       = 0x1B; // OUT float dB, 56-80 Hz band (V30)
+    public const byte GetSubharmTop       = 0x1C;
+    public const byte SetSubharmSelect    = 0x1D; // OUT 1 byte selectivity mode (V30)
+    public const byte GetSubharmSelect    = 0x1E;
+    public const byte GetSubharmMeter     = 0x1F; // IN outputs x uint16 LE sub peaks
+    public const byte SetSubharmSolo      = 0x2C; // OUT 1 byte; runtime only
+    public const byte GetSubharmSolo      = 0x2D;
+    public const byte SetSubharmLink      = 0x2E; // OUT 1 byte, pair-linked synthesis
+    public const byte GetSubharmLink      = 0x2F;
+    public const byte SetSubharmDepth     = 0xA9; // OUT float %, selectivity depth
+    public const byte GetSubharmDepth     = 0xAA;
+    public const byte SetSubharmHold      = 0xAB; // OUT float ms, selectivity hold
+    public const byte GetSubharmHold      = 0xAC;
+    public const byte SetSubharmCeiling   = 0xAD; // OUT float dBFS sub ceiling (0 = off)
+    public const byte GetSubharmCeiling   = 0xAE;
+
+    // Tube modeller (wire V31). One indexed pair carries every parameter as a
+    // float32, bools, mask and enums included: wValue = TubeParam index.
+    public const byte SetTubeParam        = 0x3E;
+    public const byte GetTubeParam        = 0x3F;
+
+    // Output limiter (wire V32). One opcode: OUT sets, IN gets, wValue =
+    // (output << 8) | LimiterParam index, float32 payload. Output 0xFF sets
+    // every output; GET indices 0x80/0x81 read the meter and status blocks.
+    public const byte Limiter             = 0x81;
 
     // Preset system (firmware v3+)
     public const byte PresetSave           = 0x90;
@@ -1937,13 +1987,21 @@ public partial class DspDevice : ObservableObject, IDisposable
 
     public (string Platform, string FirmwareVersion)? GetDeviceInfo()
     {
-        var response = ControlTransferIn(VendorCommands.GetPlatform, 0, 4);
-        if (response == null || response.Length < 3) return null;
-        var platform = response[0] == 1 ? "RP2350" : "RP2040";
-        var major = response[1];
-        var minor = response[2] >> 4;
-        var patch = response[2] & 0x0F;
-        return (platform, $"v{major}.{minor}.{patch}");
+        if (GetPlatformInfo() is not { } info) return null;
+        return (info.Platform, "v" + (info.Version.TagSuffix ?? info.Version.ToString()));
+    }
+
+    /// <summary>
+    /// REQ_GET_PLATFORM, asked for the full 7 bytes: platform, version, and the
+    /// beta ordinal. Older firmware answers with 6 or 4 bytes; see
+    /// <see cref="FirmwareVersion.FromPlatformReply"/>.
+    /// </summary>
+    public (string Platform, FirmwareVersion Version)? GetPlatformInfo()
+    {
+        var response = ControlTransferIn(VendorCommands.GetPlatform, 0, 7);
+        if (response == null || FirmwareVersion.FromPlatformReply(response) is not { } reply) return null;
+        var platform = reply.Platform switch { 1 => "RP2350", 2 => "STM32H723", _ => "RP2040" };
+        return (platform, reply.Version);
     }
 
     /// <summary>
@@ -3146,6 +3204,156 @@ public partial class DspDevice : ObservableObject, IDisposable
     {
         var r = ControlTransferIn(VendorCommands.GetPsybassMask, 0, 2);
         return r != null && r.Length >= 2 ? BitConverter.ToUInt16(r, 0) : (ushort?)null;
+    }
+
+    // ── Subharmonic synthesizer (0x10–0x1F, 0x2C–0x2F, 0xA9–0xAE) ──────────────
+
+    private bool SetFloat(byte req, float value) => ControlTransferOut(req, 0, BitConverter.GetBytes(value));
+
+    private float? GetFloat(byte req, ushort value = 0)
+    {
+        var r = ControlTransferIn(req, value, 4);
+        return r != null && r.Length >= 4 ? BitConverter.ToSingle(r, 0) : (float?)null;
+    }
+
+    private bool SetByte(byte req, byte value) => ControlTransferOut(req, 0, new[] { value });
+
+    private byte? GetByte(byte req, ushort value = 0)
+    {
+        var r = ControlTransferIn(req, value, 1);
+        return r != null && r.Length >= 1 ? r[0] : (byte?)null;
+    }
+
+    public bool SetSubharmEnabled(bool on) => SetByte(VendorCommands.SetSubharm, on ? (byte)1 : (byte)0);
+    /// <summary>Null if the firmware STALLs (pre-V29).</summary>
+    public bool? GetSubharmEnabled() => GetByte(VendorCommands.GetSubharm) is { } b ? b != 0 : null;
+    public bool SetSubharmLow(float db) => SetFloat(VendorCommands.SetSubharmLow, db);
+    public float? GetSubharmLow() => GetFloat(VendorCommands.GetSubharmLow);
+    public bool SetSubharmHigh(float db) => SetFloat(VendorCommands.SetSubharmHigh, db);
+    public float? GetSubharmHigh() => GetFloat(VendorCommands.GetSubharmHigh);
+    public bool SetSubharmTop(float db) => SetFloat(VendorCommands.SetSubharmTop, db);
+    public float? GetSubharmTop() => GetFloat(VendorCommands.GetSubharmTop);
+    public bool SetSubharmBoost(float db) => SetFloat(VendorCommands.SetSubharmBoost, db);
+    public float? GetSubharmBoost() => GetFloat(VendorCommands.GetSubharmBoost);
+    public bool SetSubharmSelectDepth(float pct) => SetFloat(VendorCommands.SetSubharmDepth, pct);
+    public float? GetSubharmSelectDepth() => GetFloat(VendorCommands.GetSubharmDepth);
+    public bool SetSubharmSelectHold(float ms) => SetFloat(VendorCommands.SetSubharmHold, ms);
+    public float? GetSubharmSelectHold() => GetFloat(VendorCommands.GetSubharmHold);
+    public bool SetSubharmCeiling(float dbfs) => SetFloat(VendorCommands.SetSubharmCeiling, dbfs);
+    public float? GetSubharmCeiling() => GetFloat(VendorCommands.GetSubharmCeiling);
+    public bool SetSubharmSelectMode(int mode) =>
+        SetByte(VendorCommands.SetSubharmSelect, (byte)Math.Clamp(mode, 0, SubharmSelectMode.Max));
+    public int? GetSubharmSelectMode() =>
+        GetByte(VendorCommands.GetSubharmSelect) is { } b ? Math.Min((int)b, SubharmSelectMode.Max) : null;
+    public bool SetSubharmLinkPairs(bool linked) => SetByte(VendorCommands.SetSubharmLink, linked ? (byte)1 : (byte)0);
+    public bool? GetSubharmLinkPairs() => GetByte(VendorCommands.GetSubharmLink) is { } b ? b != 0 : null;
+    /// <summary>Runtime-only monitoring aid: masked outputs carry the sub with
+    /// the program removed. Never saved, so clear it when the window closes.</summary>
+    public bool SetSubharmSolo(bool solo) => SetByte(VendorCommands.SetSubharmSolo, solo ? (byte)1 : (byte)0);
+    public bool? GetSubharmSolo() => GetByte(VendorCommands.GetSubharmSolo) is { } b ? b != 0 : null;
+
+    public bool SetSubharmMask(ushort mask) =>
+        ControlTransferOut(VendorCommands.SetSubharmMask, 0, new[] { (byte)(mask & 0xFF), (byte)(mask >> 8) });
+
+    public ushort? GetSubharmMask()
+    {
+        var r = ControlTransferIn(VendorCommands.GetSubharmMask, 0, 2);
+        return r != null && r.Length >= 2 ? BitConverter.ToUInt16(r, 0) : (ushort?)null;
+    }
+
+    /// <summary>The worst-case gain of the live configuration (dB, 0 while
+    /// disabled), computed by the firmware on each GET, so it may follow a SET
+    /// at once. Cutting the preamp by this much is an exact fix.</summary>
+    public float? GetSubharmHeadroom() => GetFloat(VendorCommands.GetSubharmHeadroom);
+
+    /// <summary>A decaying peak of the synthesized sub per output, normalized to
+    /// 0..1 like the status peaks. A short read keeps the entries that arrived.</summary>
+    public float[]? GetSubharmMeter(int outputs)
+    {
+        if (outputs <= 0) return null;
+        var r = ControlTransferIn(VendorCommands.GetSubharmMeter, 0, outputs * 2);
+        if (r == null || r.Length < 2) return null;
+        var levels = new float[Math.Min(outputs, r.Length / 2)];
+        for (int i = 0; i < levels.Length; i++)
+            levels[i] = BitConverter.ToUInt16(r, i * 2) / SubharmLimits.MeterFullScale;
+        return levels;
+    }
+
+    // ── Tube modeller (0x3E/0x3F) ─────────────────────────────────────────────
+
+    /// <summary>Sets one tube parameter (<see cref="TubeParam"/>); every value
+    /// is a float32, the bools, mask and enums included.</summary>
+    public bool SetTubeParam(ushort index, float value) =>
+        ControlTransferOut(VendorCommands.SetTubeParam, index, BitConverter.GetBytes(value));
+
+    /// <summary>Null when the GET STALLs (bad index, or firmware before V31).</summary>
+    public float? GetTubeParam(ushort index) => GetFloat(VendorCommands.GetTubeParam, index);
+
+    // ── Output limiter (0x81) ─────────────────────────────────────────────────
+
+    /// <summary>Sets one limiter parameter (<see cref="LimiterParam"/>) on an
+    /// output, or on every output with <see cref="LimiterParam.AllOutputs"/>.
+    /// A linked output's SET reaches its whole group in the firmware.</summary>
+    public bool SetLimiterParam(int output, byte index, float value) =>
+        ControlTransferOut(VendorCommands.Limiter, (ushort)((output & 0xFF) << 8 | index), BitConverter.GetBytes(value));
+
+    /// <summary>Null when the GET STALLs (bad output or index, or pre-V32).</summary>
+    public float? GetLimiterParam(int output, byte index) =>
+        output is >= 0 and < 0xFF ? GetFloat(VendorCommands.Limiter, (ushort)(output << 8 | index)) : null;
+
+    /// <summary>Gain reduction per output in dB (0 = none), from the 0.01 dB
+    /// meter block.</summary>
+    public float[]? GetLimiterMeter(int outputs)
+    {
+        if (outputs <= 0) return null;
+        var r = ControlTransferIn(VendorCommands.Limiter, LimiterParam.GetMeter, outputs * 2);
+        if (r == null || r.Length < 2) return null;
+        var gr = new float[Math.Min(outputs, r.Length / 2)];
+        for (int i = 0; i < gr.Length; i++) gr[i] = BitConverter.ToUInt16(r, i * 2) / 100f;
+        return gr;
+    }
+
+    /// <summary>The limiter status block: whether any limiter is engaged, the
+    /// lookahead and block sizes in samples, and the output count. Reading it
+    /// feature-detects the limiter.</summary>
+    public (bool Engaged, int LookaheadSamples, int BlockSamples, int Outputs)? GetLimiterStatus()
+    {
+        var r = ControlTransferIn(VendorCommands.Limiter, LimiterParam.GetStatus, 4);
+        if (r == null || r.Length < 4) return null;
+        return (r[0] != 0, r[1], r[2], r[3]);
+    }
+
+    // ── Core 1, build info, LG Sound Sync status ──────────────────────────────
+
+    /// <summary>Core 1 mode: 0 idle, 1 PDM, 2 EQ worker.</summary>
+    public int? GetCore1Mode() => GetByte(VendorCommands.GetCore1Mode);
+
+    /// <summary>True when enabling <paramref name="output"/> would collide with
+    /// what Core 1 is already doing (PDM against the EQ workers).</summary>
+    public bool? GetCore1Conflict(int output) =>
+        GetByte(VendorCommands.GetCore1Conflict, (ushort)output) is { } b ? b != 0 : null;
+
+    /// <summary>The firmware's git describe and build date, for people only.</summary>
+    public (string Describe, string Date)? GetBuildInfo()
+    {
+        var r = ControlTransferIn(VendorCommands.GetBuildInfo, 0, 64);
+        if (r == null || r.Length < 48) return null;
+        static string Text(byte[] b, int start, int length)
+        {
+            int end = start;
+            while (end < Math.Min(start + length, b.Length) && b[end] != 0) end++;
+            return System.Text.Encoding.ASCII.GetString(b, start, end - start);
+        }
+        return (Text(r, 0, 48), r.Length >= 60 ? Text(r, 48, 12) : "");
+    }
+
+    /// <summary>LG Sound Sync runtime status: enabled, a TV present, its volume
+    /// (0..100, or 0xFF before the first decode) and mute.</summary>
+    public (bool Enabled, bool Present, byte Volume, bool Muted)? GetLgSoundSyncStatus()
+    {
+        var r = ControlTransferIn(VendorCommands.GetLgSoundSyncStatus, 0, 16);
+        if (r == null || r.Length < 4) return null;
+        return (r[0] != 0, r[1] != 0, r[2], r[3] != 0);
     }
 
     // ── ADAT input (0x68–0x6E, RP2350) ───────────────────────────────────────

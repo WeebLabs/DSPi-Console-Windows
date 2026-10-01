@@ -613,8 +613,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         _suppressDirtyCheck = true;
                         Task.Run(() =>
                         {
-                            var info = _device.GetDeviceInfo();
+                            var info = _device.GetPlatformInfo();
                             var newPlatform = info?.Platform ?? "";
+                            var firmware = info?.Version;
+                            _dispatcher.TryEnqueue(() => DeviceFirmwareVersion = firmware);
                             // Set channel counts for platform-aware status
                             // parsing and the app↔wire channel-index mapping.
                             // The bulk header refines these authoritatively in
@@ -1835,6 +1837,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             FirstOrderPassSupported = bp.FormatVersion >= 28;
             SeedPsybassFromBulk(bp);
             SeedUpmixFromBulk(bp);
+            SeedSubharmFromBulk(bp);
+            SeedInputChannelDelaysFromBulk(bp);
+            SeedTubeFromBulk(bp);
+            SeedLimiterFromBulk(bp);
             SeedAdatInputFromBulk(bp);
             SeedI2sClockFromBulk(bp);
             LevellerMasksSupported = bp.FormatVersion >= 18 && bp.NumInputChannels > 2;
@@ -3713,10 +3719,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsDeviceConnected) return;
 
+        // The limiter has no undo log: it goes back to the saved baseline
+        // directly, through the gang-safe apply. Only in independent mode,
+        // where it is output configuration; with-preset it is a preset edit.
+        if (OutputConfigMode == 0 && _savedSnapshot is { } baseline)
+        {
+            bool prev = _suppressDirtyCheck;
+            _suppressDirtyCheck = true;
+            try { RevertLimiterTo(baseline.Limiter); }
+            finally { _suppressDirtyCheck = prev; }
+        }
+
         List<Action> log;
         lock (_ioUndoLock)
         {
-            if (_ioUndoLog.Count == 0) return;
+            if (_ioUndoLog.Count == 0) { CheckDirty(); return; }
             log = new List<Action>(_ioUndoLog);
             _ioUndoLog.Clear();
         }

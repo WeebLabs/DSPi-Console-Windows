@@ -143,7 +143,8 @@ public partial class MainViewModel
     /// RP2040 carries the section as zeros, so also gate on the platform.</summary>
     internal void SeedUpmixFromBulk(BulkParams bp)
     {
-        UpmixSupported = bp.HasUpmix && Platform == "RP2350";
+        // The app is a V26 client of the upmixer (the presence control).
+        UpmixSupported = bp.HasUpmix && bp.FormatVersion >= 26 && Platform == "RP2350";
         if (!UpmixSupported || bp.Upmix == null) return;
         ApplyUpmixConfig(bp.Upmix);
     }

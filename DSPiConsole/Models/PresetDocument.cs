@@ -34,6 +34,12 @@ public sealed class PresetDocument
     /// <summary>Null when the source device had no upmixer (pre-V25 / RP2040).</summary>
     public PresetUpmixBlock? Upmix { get; set; }
 
+    /// <summary>Null when the source device had no subharmonic synth (pre-V29).</summary>
+    public PresetSubharmBlock? Subharm { get; set; }
+
+    /// <summary>Null when the source device had no tube modeller (pre-V31).</summary>
+    public PresetTubeBlock? Tube { get; set; }
+
     public List<PresetChannelBlock> Channels { get; set; } = new();
     public List<PresetCrosspointBlock> Matrix { get; set; } = new();
 
@@ -54,6 +60,12 @@ public sealed class PresetDocumentMeta
     public int WireFormatVersion { get; set; }
     public int InputChannelCount { get; set; }
     public int OutputChannelCount { get; set; }
+
+    /// <summary>The source device's persistence modes (0 = independent, 1 = with
+    /// preset) for master volume and the output configuration. Informational,
+    /// as on the macOS Console; null in files from before they were written.</summary>
+    public int? MasterVolumeMode { get; set; }
+    public int? OutputConfigMode { get; set; }
 }
 
 public sealed class PresetGlobalBlock
@@ -123,6 +135,42 @@ public sealed class PresetPsybassBlock
     public int OutputMask { get; set; }
 }
 
+/// <summary>Subharmonic synthesizer (V29, extended V30). Defaults are the
+/// firmware's, so a block missing a field reads as a fresh device.</summary>
+public sealed class PresetSubharmBlock
+{
+    public bool Enabled { get; set; }
+    public float LowDb { get; set; } = SubharmLimits.DefaultLowDb;
+    public float HighDb { get; set; } = SubharmLimits.DefaultHighDb;
+    public float TopDb { get; set; } = SubharmLimits.DefaultTopDb;
+    public float BoostDb { get; set; } = SubharmLimits.DefaultBoostDb;
+    public int OutputMask { get; set; } = SubharmLimits.DefaultOutputMask;
+    public int SelectMode { get; set; } = SubharmLimits.DefaultSelectMode;
+    public float SelectDepthPct { get; set; } = SubharmLimits.DefaultDepthPct;
+    public float SelectHoldMs { get; set; } = SubharmLimits.DefaultHoldMs;
+    public float CeilingDb { get; set; } = SubharmLimits.DefaultCeilingDb;
+    public bool LinkPairs { get; set; } = SubharmLimits.DefaultLinkPairs;
+}
+
+/// <summary>Tube modeller (V31). Defaults are the firmware's.</summary>
+public sealed class PresetTubeBlock
+{
+    public bool Enabled { get; set; }
+    public int OutputMask { get; set; } = TubeLimits.DefaultOutputMask;
+    public int TubeType { get; set; } = TubeLimits.DefaultType;
+    public float DriveDb { get; set; } = TubeLimits.DefaultDriveDb;
+    public float BiasPct { get; set; } = TubeLimits.DefaultBiasPct;
+    public float AsymDb { get; set; } = TubeLimits.DefaultAsymDb;
+    public float HardnessPct { get; set; } = TubeLimits.DefaultHardnessPct;
+    public float SagPct { get; set; } = TubeLimits.DefaultSagPct;
+    public int Rectifier { get; set; } = TubeLimits.DefaultRectifier;
+    public bool XfmrEnabled { get; set; } = TubeLimits.DefaultXfmrEnabled;
+    public float XfmrDamping { get; set; } = TubeLimits.DefaultXfmrDamping;
+    public float XfmrResHz { get; set; } = TubeLimits.DefaultXfmrResHz;
+    public float MixPct { get; set; } = TubeLimits.DefaultMixPct;
+    public float TrimDb { get; set; } = TubeLimits.DefaultTrimDb;
+}
+
 public sealed class PresetUpmixBlock
 {
     public bool Enabled { get; set; }
@@ -153,6 +201,17 @@ public sealed class PresetChannelBlock
     public string Name { get; set; } = "";
     public bool IsOutput { get; set; }
 
+    /// <summary>The wire (unified EQ) channel, and the input or output index
+    /// behind it: the macOS Console's own numbering. Read in preference to
+    /// <see cref="ChannelId"/> when present, so a document survives a channel
+    /// id change on either side. Null in older Windows files.</summary>
+    public int? EqChannel { get; set; }
+    public int? InputIndex { get; set; }
+    public int? OutputIndex { get; set; }
+
+    /// <summary>Channel delay (REQ_SET_DELAY): an input's own delay, or an
+    /// output's output delay (one value in the firmware). Older Windows files
+    /// held only outputs' delays here.</summary>
     public float DelayMs { get; set; }
 
     /// <summary>Output channels only.</summary>
@@ -160,10 +219,47 @@ public sealed class PresetChannelBlock
     public bool Muted { get; set; }
     public bool Enabled { get; set; } = true;
 
+    /// <summary>Output delay (REQ_SET_OUTPUT_DELAY), the value the output Delay
+    /// control sets; preferred over <see cref="DelayMs"/> for an output. Null in
+    /// older Windows files.</summary>
+    public float? OutputDelayMs { get; set; }
+
+    /// <summary>This output's limiter (V32+). Absent on inputs and when the
+    /// source device had none, which leaves the device's alone. Applied with
+    /// the hardware option, since the firmware keeps it with the wiring.</summary>
+    public PresetLimiterBlock? Limiter { get; set; }
+
     public List<PresetBandBlock> Eq { get; set; } = new();
 
     /// <summary>Crossover bands 0..3. Empty for inputs and for pre-V11 sources.</summary>
     public List<PresetBandBlock> Crossover { get; set; } = new();
+}
+
+/// <summary>One output's limiter, as the firmware holds it.</summary>
+public sealed class PresetLimiterBlock
+{
+    public bool Enabled { get; set; }
+    public float ThresholdDb { get; set; } = LimiterLimits.DefaultThresholdDb;
+    public float ReleaseMs { get; set; } = LimiterLimits.DefaultReleaseMs;
+    /// <summary>0 = unlinked, 1..4.</summary>
+    public int LinkGroup { get; set; }
+
+    public static PresetLimiterBlock From(LimiterOutputSettings s) => new()
+    {
+        Enabled = s.Enabled,
+        ThresholdDb = s.ThresholdDb,
+        ReleaseMs = s.ReleaseMs,
+        LinkGroup = s.LinkGroup,
+    };
+
+    /// <summary>Clamped as the firmware would; NaN takes the default.</summary>
+    public LimiterOutputSettings ToSettings() => new()
+    {
+        Enabled = Enabled,
+        ThresholdDb = float.IsNaN(ThresholdDb) ? LimiterLimits.DefaultThresholdDb : LimiterLimits.ClampThreshold(ThresholdDb),
+        ReleaseMs = float.IsNaN(ReleaseMs) ? LimiterLimits.DefaultReleaseMs : LimiterLimits.ClampRelease(ReleaseMs),
+        LinkGroup = LimiterLimits.ClampLinkGroup(LinkGroup),
+    };
 }
 
 /// <summary>One filter band. Field meanings follow the wire encoding, including

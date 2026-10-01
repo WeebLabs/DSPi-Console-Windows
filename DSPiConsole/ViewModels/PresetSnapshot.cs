@@ -12,6 +12,8 @@ public class PresetSnapshot
 {
     public float InputPreampLDb;
     public float InputPreampRDb;
+    // Preamps of wire inputs 2..7 (RP2350 multichannel inputs).
+    public float[] InputPreampExt = new float[6];
     public float MasterVolumeDb;
     // V15+ preset slot persists audio_state.volume as user_vol_index. Captured
     // unconditionally — unlike MasterVolumeDb, user volume isn't gated by a
@@ -40,6 +42,9 @@ public class PresetSnapshot
     public int LevellerApplyMask;
 
     public Dictionary<int, float> Delays = new();
+    // Input channels' own delays (REQ_SET_DELAY), by app channel id. An output's
+    // channel delay is its output delay, already in Delays above.
+    public Dictionary<int, float> InputDelays = new();
     public bool[,] MatrixRouting = new bool[MainViewModel.MatrixMaxInputs, 9];
     public float[,] MatrixGain = new float[MainViewModel.MatrixMaxInputs, 9];
     public bool[,] MatrixInvert = new bool[MainViewModel.MatrixMaxInputs, 9];
@@ -112,6 +117,57 @@ public class PresetSnapshot
     // Null when the firmware has no upmixer (pre-V25 / RP2040).
     public UpmixConfig? Upmix;
 
+    // Volume leveller core settings (the masks are above).
+    public bool LevellerEnabled;
+    public float LevellerAmount;
+    public int LevellerSpeed;
+    public float LevellerMaxGainDb;
+    public bool LevellerLookahead;
+    public float LevellerGateDb;
+
+    // Psychoacoustic bass (V23, preset slot).
+    public bool PsybassEnabled;
+    public int PsybassOutputMask;
+    public float PsybassCutoffHz;
+    public float PsybassHarmonicsDb;
+    public float PsybassDriveDb;
+    public float PsybassCharacterPct;
+    public float PsybassOriginalDb;
+
+    // Subharmonic synthesizer (V29/V30, preset slot). Solo is runtime-only and
+    // the headroom is derived, so neither is here.
+    public bool SubharmEnabled;
+    public int SubharmOutputMask;
+    public float SubharmLowDb;
+    public float SubharmHighDb;
+    public float SubharmTopDb;
+    public float SubharmBoostDb;
+    public int SubharmSelectMode;
+    public float SubharmSelectDepthPct;
+    public float SubharmSelectHoldMs;
+    public float SubharmCeilingDb;
+    public bool SubharmLinkPairs;
+
+    // Tube modeller (V31, preset slot).
+    public bool TubeEnabled;
+    public int TubeOutputMask;
+    public int TubeType;
+    public float TubeDriveDb;
+    public float TubeBiasPct;
+    public float TubeAsymDb;
+    public float TubeHardnessPct;
+    public float TubeSagPct;
+    public int TubeRectifier;
+    public bool TubeXfmrEnabled;
+    public float TubeXfmrDamping;
+    public float TubeXfmrResHz;
+    public float TubeMixPct;
+    public float TubeTrimDb;
+
+    // Output limiter (V32), one entry per wire output slot. Follows
+    // output_config_mode like the pins, so it is part of the IO block.
+    public LimiterOutputSettings[] Limiter = Array.Empty<LimiterOutputSettings>();
+
     /// <summary>
     /// Capture a snapshot from the current ViewModel state.
     /// </summary>
@@ -143,6 +199,7 @@ public class PresetSnapshot
         {
             int id = (int)ch.Id;
             snap.Delays[id] = vm.GetChannelDelay(ch);
+            if (!ch.IsOutput) snap.InputDelays[id] = vm.GetPreMatrixDelay(id);
             if (ch.IsOutput)
                 snap.OutputGains[id] = vm.GetChannelGain(ch);
         }
@@ -246,6 +303,53 @@ public class PresetSnapshot
         if (vm.UpmixSupported)
             snap.Upmix = vm.CaptureUpmixConfig();
 
+        for (int i = 0; i < snap.InputPreampExt.Length; i++)
+            snap.InputPreampExt[i] = vm.InputPreampAt(i + 2);
+
+        snap.LevellerEnabled = vm.LevellerEnabled;
+        snap.LevellerAmount = vm.LevellerAmount;
+        snap.LevellerSpeed = vm.LevellerSpeed;
+        snap.LevellerMaxGainDb = vm.LevellerMaxGainDb;
+        snap.LevellerLookahead = vm.LevellerLookahead;
+        snap.LevellerGateDb = vm.LevellerGateDb;
+
+        snap.PsybassEnabled = vm.PsybassEnabled;
+        snap.PsybassOutputMask = vm.PsybassOutputMask;
+        snap.PsybassCutoffHz = vm.PsybassCutoffHz;
+        snap.PsybassHarmonicsDb = vm.PsybassHarmonicsDb;
+        snap.PsybassDriveDb = vm.PsybassDriveDb;
+        snap.PsybassCharacterPct = vm.PsybassCharacterPct;
+        snap.PsybassOriginalDb = vm.PsybassOriginalDb;
+
+        snap.SubharmEnabled = vm.SubharmEnabled;
+        snap.SubharmOutputMask = vm.SubharmOutputMask;
+        snap.SubharmLowDb = vm.SubharmLowDb;
+        snap.SubharmHighDb = vm.SubharmHighDb;
+        snap.SubharmTopDb = vm.SubharmTopDb;
+        snap.SubharmBoostDb = vm.SubharmBoostDb;
+        snap.SubharmSelectMode = vm.SubharmSelectMode;
+        snap.SubharmSelectDepthPct = vm.SubharmSelectDepthPct;
+        snap.SubharmSelectHoldMs = vm.SubharmSelectHoldMs;
+        snap.SubharmCeilingDb = vm.SubharmCeilingDb;
+        snap.SubharmLinkPairs = vm.SubharmLinkPairs;
+
+        snap.TubeEnabled = vm.TubeEnabled;
+        snap.TubeOutputMask = vm.TubeOutputMask;
+        snap.TubeType = vm.TubeType;
+        snap.TubeDriveDb = vm.TubeDriveDb;
+        snap.TubeBiasPct = vm.TubeBiasPct;
+        snap.TubeAsymDb = vm.TubeAsymDb;
+        snap.TubeHardnessPct = vm.TubeHardnessPct;
+        snap.TubeSagPct = vm.TubeSagPct;
+        snap.TubeRectifier = vm.TubeRectifier;
+        snap.TubeXfmrEnabled = vm.TubeXfmrEnabled;
+        snap.TubeXfmrDamping = vm.TubeXfmrDamping;
+        snap.TubeXfmrResHz = vm.TubeXfmrResHz;
+        snap.TubeMixPct = vm.TubeMixPct;
+        snap.TubeTrimDb = vm.TubeTrimDb;
+
+        snap.Limiter = vm.LimiterOutputs.ToArray();
+
         return snap;
     }
 
@@ -277,6 +381,7 @@ public class PresetSnapshot
         I2sClockMode = src.I2sClockMode;
         I2sClockPinMode = src.I2sClockPinMode;
         I2sBckPinSlave = src.I2sBckPinSlave;
+        Limiter = (LimiterOutputSettings[])src.Limiter.Clone();
     }
 }
 
@@ -298,6 +403,12 @@ public static class PresetDiff
         1 + ((extMask & 1) != 0 ? 1 : 0) + ((extMask & 2) != 0 ? 1 : 0)
           + ((extMask & 4) != 0 ? 1 : 0);
 
+    private static bool Differs(float a, float b) => Math.Abs(a - b) > 0.05f;
+
+    private static int Count(params bool[] changed) => changed.Count(c => c);
+
+    private static string Plural(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
+
     // Renders a channel/pair bitmask as a 1-based comma list, e.g. "1,2,5".
     private static string MaskList(int mask)
     {
@@ -316,6 +427,9 @@ public static class PresetDiff
             changes.Add($"Input L preamp: {FormatDb(old.InputPreampLDb)} → {FormatDb(cur.InputPreampLDb)}");
         if (Math.Abs(old.InputPreampRDb - cur.InputPreampRDb) > 0.05f)
             changes.Add($"Input R preamp: {FormatDb(old.InputPreampRDb)} → {FormatDb(cur.InputPreampRDb)}");
+        for (int i = 0; i < Math.Min(old.InputPreampExt.Length, cur.InputPreampExt.Length); i++)
+            if (Math.Abs(old.InputPreampExt[i] - cur.InputPreampExt[i]) > 0.05f)
+                changes.Add($"Input {i + 3} preamp: {FormatDb(old.InputPreampExt[i])} → {FormatDb(cur.InputPreampExt[i])}");
         // Master volume only participates in preset dirty state when the firmware
         // is configured to store it with each preset. In independent mode it is
         // managed separately via "Save Master Volume".
@@ -365,6 +479,72 @@ public static class PresetDiff
         if (old.LevellerApplyMask != cur.LevellerApplyMask)
             changes.Add($"Leveller apply: {MaskList(old.LevellerApplyMask)} → {MaskList(cur.LevellerApplyMask)}");
 
+        // Volume leveller
+        if (old.LevellerEnabled != cur.LevellerEnabled)
+            changes.Add($"Volume leveller: {(cur.LevellerEnabled ? "enabled" : "disabled")}");
+        int levellerChanges = Count(
+            Differs(old.LevellerAmount, cur.LevellerAmount),
+            old.LevellerSpeed != cur.LevellerSpeed,
+            Differs(old.LevellerMaxGainDb, cur.LevellerMaxGainDb),
+            old.LevellerLookahead != cur.LevellerLookahead,
+            Differs(old.LevellerGateDb, cur.LevellerGateDb));
+        if (levellerChanges > 0)
+            changes.Add(Plural(levellerChanges, "volume leveller setting") + " changed");
+
+        // Psychoacoustic bass
+        if (old.PsybassEnabled != cur.PsybassEnabled)
+            changes.Add($"Psychoacoustic bass: {(cur.PsybassEnabled ? "enabled" : "disabled")}");
+        if (old.PsybassOutputMask != cur.PsybassOutputMask)
+            changes.Add($"Psychoacoustic bass outputs: {MaskList(old.PsybassOutputMask)} → {MaskList(cur.PsybassOutputMask)}");
+        int psybassChanges = Count(
+            Differs(old.PsybassCutoffHz, cur.PsybassCutoffHz),
+            Differs(old.PsybassHarmonicsDb, cur.PsybassHarmonicsDb),
+            Differs(old.PsybassDriveDb, cur.PsybassDriveDb),
+            Differs(old.PsybassCharacterPct, cur.PsybassCharacterPct),
+            Differs(old.PsybassOriginalDb, cur.PsybassOriginalDb));
+        if (psybassChanges > 0)
+            changes.Add(Plural(psybassChanges, "psychoacoustic bass setting") + " changed");
+
+        // Subharmonic synthesizer
+        if (old.SubharmEnabled != cur.SubharmEnabled)
+            changes.Add($"Subharmonic synth: {(cur.SubharmEnabled ? "enabled" : "disabled")}");
+        if (old.SubharmOutputMask != cur.SubharmOutputMask)
+            changes.Add($"Subharmonic synth outputs: {MaskList(old.SubharmOutputMask)} → {MaskList(cur.SubharmOutputMask)}");
+        int subharmChanges = Count(
+            Differs(old.SubharmLowDb, cur.SubharmLowDb),
+            Differs(old.SubharmHighDb, cur.SubharmHighDb),
+            Differs(old.SubharmTopDb, cur.SubharmTopDb),
+            Differs(old.SubharmBoostDb, cur.SubharmBoostDb),
+            old.SubharmSelectMode != cur.SubharmSelectMode,
+            Differs(old.SubharmSelectDepthPct, cur.SubharmSelectDepthPct),
+            Differs(old.SubharmSelectHoldMs, cur.SubharmSelectHoldMs),
+            Differs(old.SubharmCeilingDb, cur.SubharmCeilingDb),
+            old.SubharmLinkPairs != cur.SubharmLinkPairs);
+        if (subharmChanges > 0)
+            changes.Add(Plural(subharmChanges, "subharmonic synth setting") + " changed");
+
+        // Tube modeller
+        if (old.TubeEnabled != cur.TubeEnabled)
+            changes.Add($"Tube modeller: {(cur.TubeEnabled ? "enabled" : "disabled")}");
+        if (old.TubeOutputMask != cur.TubeOutputMask)
+            changes.Add($"Tube modeller outputs: {MaskList(old.TubeOutputMask)} → {MaskList(cur.TubeOutputMask)}");
+        if (old.TubeType != cur.TubeType)
+            changes.Add($"Tube type: {TubeTables.TypeName(old.TubeType)} → {TubeTables.TypeName(cur.TubeType)}");
+        int tubeChanges = Count(
+            Differs(old.TubeDriveDb, cur.TubeDriveDb),
+            Differs(old.TubeBiasPct, cur.TubeBiasPct),
+            Differs(old.TubeAsymDb, cur.TubeAsymDb),
+            Differs(old.TubeHardnessPct, cur.TubeHardnessPct),
+            Differs(old.TubeSagPct, cur.TubeSagPct),
+            old.TubeRectifier != cur.TubeRectifier,
+            old.TubeXfmrEnabled != cur.TubeXfmrEnabled,
+            Differs(old.TubeXfmrDamping, cur.TubeXfmrDamping),
+            Differs(old.TubeXfmrResHz, cur.TubeXfmrResHz),
+            Differs(old.TubeMixPct, cur.TubeMixPct),
+            Differs(old.TubeTrimDb, cur.TubeTrimDb));
+        if (tubeChanges > 0)
+            changes.Add(Plural(tubeChanges, "tube modeller setting") + " changed");
+
         // Stereo upmixer
         if (old.Upmix != null && cur.Upmix != null)
         {
@@ -406,6 +586,17 @@ public static class PresetDiff
                 var name = vm.GetChannelName(ch);
                 changes.Add($"{name} delay: {FormatVal(oldD)} ms \u2192 {FormatVal(curD)} ms");
             }
+        }
+
+        // Input delays (an output's delay is covered above).
+        foreach (var ch in Channel.All)
+        {
+            if (ch.IsOutput) continue;
+            int id = (int)ch.Id;
+            float a = old.InputDelays.TryGetValue(id, out var od2) ? od2 : 0;
+            float b = cur.InputDelays.TryGetValue(id, out var cd2) ? cd2 : 0;
+            if (Math.Abs(a - b) > 0.00005f)
+                changes.Add($"{vm.GetChannelName(ch)} delay: {FormatVal(a)} ms \u2192 {FormatVal(b)} ms");
         }
 
         // Matrix crosspoints
@@ -595,6 +786,18 @@ public static class PresetDiff
             changes.Add(new("io.adat-en", "ADAT output", old.AdatEnabled ? "enabled" : "disabled", cur.AdatEnabled ? "enabled" : "disabled"));
         if (old.AdatPin != cur.AdatPin)
             changes.Add(new("io.adat-pin", "ADAT pin", $"GPIO {old.AdatPin}", $"GPIO {cur.AdatPin}"));
+
+        // Output limiter, per output
+        var limiterOutputs = vm.ActiveOutputs;
+        for (int o = 0; o < Math.Min(old.Limiter.Length, cur.Limiter.Length) && o < limiterOutputs.Count; o++)
+        {
+            var (a, b) = (old.Limiter[o], cur.Limiter[o]);
+            if (a == b) continue;
+            string Describe(LimiterOutputSettings s) =>
+                (s.Enabled ? $"on, {s.ThresholdDb:0.#} dB, {s.ReleaseMs:0} ms" : "off")
+                + (s.LinkGroup != 0 ? $", {LimiterLimits.LinkGroupName(s.LinkGroup).ToLowerInvariant()}" : "");
+            changes.Add(new($"io.limiter.{o}", $"{vm.GetChannelName(limiterOutputs[o])} limiter", Describe(a), Describe(b)));
+        }
 
         // ADAT optical input
         if (old.AdatInputEnabled != cur.AdatInputEnabled)

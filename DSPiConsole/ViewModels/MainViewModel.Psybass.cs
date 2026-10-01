@@ -49,36 +49,42 @@ public partial class MainViewModel
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassEnabled(value));
+        CheckDirty();
     }
 
     partial void OnPsybassCutoffHzChanged(float value)
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassCutoff(value));
+        CheckDirty();
     }
 
     partial void OnPsybassHarmonicsDbChanged(float value)
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassHarmonics(value));
+        CheckDirty();
     }
 
     partial void OnPsybassDriveDbChanged(float value)
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassDrive(value));
+        CheckDirty();
     }
 
     partial void OnPsybassCharacterPctChanged(float value)
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassCharacter(value));
+        CheckDirty();
     }
 
     partial void OnPsybassOriginalDbChanged(float value)
     {
         if (_psybassSuppress) return;
         Task.Run(() => _device.SetPsybassOriginal(value));
+        CheckDirty();
     }
 
     partial void OnPsybassOutputMaskChanged(int value)
@@ -86,6 +92,7 @@ public partial class MainViewModel
         if (_psybassSuppress) return;
         ushort mask = (ushort)value;
         Task.Run(() => _device.SetPsybassMask(mask));
+        CheckDirty();
     }
 
     /// <summary>Toggle one output channel in the psybass mask.</summary>

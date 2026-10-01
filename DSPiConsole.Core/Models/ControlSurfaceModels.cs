@@ -3,15 +3,17 @@ using System;
 namespace DSPiConsole.Core.Models;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Control Surfaces + IR remote (firmware control_surfaces.h; caps v13, config v2,
+// Control Surfaces + IR remote (firmware control_surfaces.h; caps v20, config v2,
 // IR config v2, group/macro config v1). Physical GPIO controls (buttons, switches,
 // pots, encoders, LEDs, PWM LEDs), an IR receiver with learned remote commands, and
 // an I2C character/OLED display, each bound to a DSP "noun" (parameter) + "action"
 // (verb). Caps v9 adds target groups (one control drives a named set of channels)
 // and macros (a button fires a short sequence of delayed steps); caps v10 adds the
 // display component, grouped IR commands and four nouns; v11 per-line display
-// alignment, v12 a per-LED brightness ceiling, v13 display level bars. All wire
-// structs are packed, little-endian.
+// alignment, v12 a per-LED brightness ceiling, v13 display level bars; v14-v16
+// the subharmonic synthesizer nouns, v17/v18 aux outputs (named here, configured
+// in a later release), v19 the tube nouns and v20 the output limiter nouns with
+// the MS_LOG unit. All wire structs are packed, little-endian.
 //
 // The whole editor is CAPS-DRIVEN: the firmware serves a capabilities header, a
 // per-type action/pin table, and a per-noun descriptor table over 0x86; the host
@@ -32,7 +34,7 @@ public enum CsType : byte
     Display = 8
 }
 
-/// <summary>DSP parameter a control drives or reflects (firmware CsNoun, 0..56).
+/// <summary>DSP parameter a control drives or reflects (firmware CsNoun, 0..78).
 /// The picker reads which nouns are available (and their ranges/units/targets)
 /// live from caps — this enum is for the few places that special-case a noun.</summary>
 public enum CsNoun : byte
@@ -68,7 +70,19 @@ public enum CsNoun : byte
     // Virtual: resolves whatever the panel is showing at event time and steps
     // it with that item's own unit, step law and range. Value/step/range must
     // stay zero, it takes no target, and a macro step may not carry it.
-    PageValue = 56
+    PageValue = 56,
+    // caps v14-v16: the subharmonic synthesizer (band levels to +12 dB at v16).
+    Subharm = 57, SubharmLow = 58, SubharmHigh = 59, SubharmBoost = 60,
+    SubharmTop = 61, SubharmSelect = 62, SubharmDepth = 63, SubharmHold = 64,
+    SubharmCeiling = 65, SubharmLink = 66, SubharmSolo = 67,
+    // caps v17/v18: aux outputs; target = the binding slot holding one.
+    Aux = 68, AuxLevel = 69,
+    // caps v19: the tube modeller.
+    Tube = 70, TubeDrive = 71, TubeType = 72, TubeMix = 73,
+    // caps v20: the output limiter, each targeting an output. Release steps
+    // logarithmically in whole ms (CsUnit.MsLog); GR is read-only.
+    Limiter = 74, LimiterThreshold = 75, LimiterRelease = 76, LimiterLink = 77,
+    LimiterGr = 78
 }
 
 /// <summary>Verb a control performs (firmware CsAction). Value = bit position;
@@ -115,12 +129,20 @@ public enum CsKind : byte { Continuous = 0, Bool = 1, Enum = 2 }
 /// <summary>Noun unit; fixes the wire encoding of value/range/step and the
 /// stepping law (firmware CS_UNIT_*). <c>Ms</c> is a caps-v4 addition (8.8
 /// milliseconds, linear, default step 0.1 ms) used by OutputDelay.</summary>
-public enum CsUnit : byte { None = 0, Db = 1, Hz = 2, Q = 3, Percent = 4, Ms = 5 }
+public enum CsUnit : byte
+{
+    None = 0, Db = 1, Hz = 2, Q = 3, Percent = 4, Ms = 5,
+    /// <summary>caps v20: plain integer ms, log stepping (step in 8.8 octaves),
+    /// for spans past 8.8's 127 ms.</summary>
+    MsLog = 6
+}
 
 /// <summary>What a noun's <c>target</c> addresses (firmware CS_TARGET_*).</summary>
 public enum CsTarget : byte
 {
-    None = 0, InputCh = 1, OutputCh = 2, DspCh = 3, DspBand = 4
+    None = 0, InputCh = 1, OutputCh = 2, DspCh = 3, DspBand = 4,
+    /// <summary>caps v17: a binding slot (0..15) holding an aux output; index 0.</summary>
+    Aux = 5
 }
 
 /// <summary>Pin capability required by a type (firmware CS_PINCLASS_*).</summary>
@@ -171,6 +193,7 @@ public static class CsStatus
     public const byte PinNotI2c = 0x23;     // v10: SDA/SCL are not a valid same-instance pair
     public const byte I2cInUse = 0x24;      // v10: that I2C instance belongs to the control interface
     public const byte InvalidPage = 0x25;   // v10: display config or page record invalid
+    public const byte InvalidAux = 0x26;    // v17: target slot is not an aux output (or the wrong kind)
 
     /// <summary>Human-readable message for a CS status code.</summary>
     public static string Message(byte code) => code switch
@@ -200,6 +223,7 @@ public static class CsStatus
         PinNotI2c => "Those pins aren't an I2C pair — SDA must be an even GPIO",
         I2cInUse => "That I2C bus belongs to the external control interface",
         InvalidPage => "Invalid display setting or page",
+        InvalidAux => "That slot does not hold an aux output of this kind",
         _ => $"Error 0x{code:X2}"
     };
 }
@@ -254,8 +278,12 @@ public static class CsWire
     public static bool UnitIsFixedPoint(CsUnit u) =>
         u is CsUnit.Db or CsUnit.Q or CsUnit.Percent or CsUnit.Ms;
 
+    /// <summary>Units whose step is in octaves (log stepping) rather than in
+    /// the unit itself.</summary>
+    public static bool UnitStepsInOctaves(CsUnit u) => u is CsUnit.Hz or CsUnit.Q or CsUnit.MsLog;
+
     /// <summary>Encode a value/range operand for a noun's unit. DB/Q/PERCENT/MS
-    /// use 8.8; NONE and HZ are plain integers.</summary>
+    /// use 8.8; NONE, HZ and MS_LOG are plain integers.</summary>
     public static short EncodeValue(double v, CsUnit u) =>
         (short)Math.Round(UnitIsFixedPoint(u) ? v * 256.0 : v);
 
@@ -277,7 +305,7 @@ public static class CsWire
         CsUnit.Hz => "Hz",
         CsUnit.Q => "Q",
         CsUnit.Percent => "%",
-        CsUnit.Ms => "ms",
+        CsUnit.Ms or CsUnit.MsLog => "ms",
         _ => ""
     };
 
@@ -285,7 +313,7 @@ public static class CsWire
     /// at 0, in the unit's own terms (octaves for the log units). Display only.</summary>
     public static double DefaultStep(CsUnit u) => u switch
     {
-        CsUnit.Hz or CsUnit.Q => 1.0 / 12.0,  // 1/12 octave
+        CsUnit.Hz or CsUnit.Q or CsUnit.MsLog => 1.0 / 12.0,  // 1/12 octave
         CsUnit.Ms => 0.1,                     // caps v4: ms detents are finer
         CsUnit.None => 1,                     // one enum position
         _ => 1                                // 1 dB / 1 %
@@ -320,7 +348,7 @@ public static class CsWire
     };
 }
 
-/// <summary>Client-side display metadata for the 57 nouns (the wire format
+/// <summary>Client-side display metadata for the 79 nouns (the wire format
 /// carries no strings). Kept minimal — the picker still reads availability,
 /// ranges, units and targets from caps.</summary>
 public static class CsNounInfo
@@ -350,8 +378,22 @@ public static class CsNounInfo
         // Page" and an arming button that reads "Allow Editing" each say it
         // once. "Browse/Adjust" is both halves of PAGE_VALUE: gated behind
         // arming it moves through pages, armed it moves the shown value.
-        "CPU Load", "Show Page", "Allow Editing", "Browse/Adjust"
+        "CPU Load", "Show Page", "Allow Editing", "Browse/Adjust",
+        // caps v14-v16 (the macOS Console's names)
+        "Subharmonic Synthesizer", "Subharm 24-36 Hz Level", "Subharm 36-56 Hz Level",
+        "Subharm LF Boost", "Subharm 56-80 Hz Level", "Subharm Selectivity",
+        "Subharm Selectivity Depth", "Subharm Selectivity Hold", "Subharm Sub Ceiling",
+        "Subharm Pair Link", "Subharm Solo",
+        // caps v17/v18: named after what they do; the target is the output.
+        "Aux Switch", "Aux Level",
+        // caps v19
+        "Tube Modeller", "Tube Drive", "Tube Type", "Tube Mix",
+        // caps v20
+        "Output Limiter", "Limiter Threshold", "Limiter Release", "Limiter Link Group",
+        "Limiter Gain Reduction"
     };
+
+    private static readonly string[] SubharmSelectNames = { "All", "Percussive", "Sustained" };
 
     // Value labels for the enum-kind nouns. The picker only uses as many entries
     // as the noun's caps enum_count reports, and falls back to the bare index for
@@ -397,6 +439,9 @@ public static class CsNounInfo
             CsNoun.SampleRate => SampleRateNames,
             CsNoun.UpmixCenterMode => UpmixCenterModeNames,
             CsNoun.UpmixSurroundMode => UpmixSurroundModeNames,
+            CsNoun.SubharmSelect => SubharmSelectNames,
+            CsNoun.TubeType => TubeTables.Types.Select((_, i) => TubeTables.TypeName(i)).ToArray(),
+            CsNoun.LimiterLink => Enumerable.Range(0, LimiterLimits.LinkGroupMax + 1).Select(LimiterLimits.LinkGroupName).ToArray(),
             _ => null
         };
         return table != null && value >= 0 && value < table.Length
@@ -431,6 +476,10 @@ public static class CsNounInfo
             or CsNoun.SampleRate or CsNoun.UsbStreaming or CsNoun.AdatActive
             or CsNoun.PresetReload or CsNoun.Macro => "System",
         CsNoun.DisplayPage or CsNoun.DisplayEdit or CsNoun.PageValue => "Display",
+        >= CsNoun.Subharm and <= CsNoun.SubharmSolo => "Subharmonic Synth",
+        CsNoun.Aux or CsNoun.AuxLevel => "Auxiliary Outputs",
+        >= CsNoun.Tube and <= CsNoun.TubeMix => "Tube Modeller",
+        >= CsNoun.Limiter and <= CsNoun.LimiterGr => "Output Limiter",
         CsNoun.LgSync or CsNoun.LgPresent or CsNoun.LgMuted or CsNoun.SpdifLock => "LG / S/PDIF",
         CsNoun.Clip or CsNoun.ClipCh or CsNoun.CpuLoad => "Status",
         _ => "Other"

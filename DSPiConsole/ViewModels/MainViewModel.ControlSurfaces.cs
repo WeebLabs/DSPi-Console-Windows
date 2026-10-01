@@ -651,6 +651,7 @@ public partial class MainViewModel
         {
             CsTarget.InputCh => $"Input {index + 1}",
             CsTarget.OutputCh => $"Output {index + 1}",
+            CsTarget.Aux => $"Aux {index + 1}",
             _ => $"Channel {index + 1}",
         };
     }

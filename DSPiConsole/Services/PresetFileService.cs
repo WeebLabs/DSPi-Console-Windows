@@ -66,11 +66,13 @@ public static class PresetFileService
             {
                 Name = name,
                 SavedUtc = DateTimeOffset.UtcNow,
-                AppVersion = typeof(PresetFileService).Assembly.GetName().Version?.ToString(),
+                AppVersion = AppInfo.Version,
                 Platform = vm.Platform,
                 WireFormatVersion = vm.Device.WireFormatVersion,
                 InputChannelCount = vm.NumInputChannels,
                 OutputChannelCount = vm.NumOutputChannels,
+                MasterVolumeMode = vm.MasterVolumeMode,
+                OutputConfigMode = vm.OutputConfigMode,
             },
         };
 
@@ -152,7 +154,47 @@ public static class PresetFileService
             };
         }
 
+        if (vm.SubharmSupported)
+        {
+            doc.Subharm = new PresetSubharmBlock
+            {
+                Enabled = vm.SubharmEnabled,
+                LowDb = vm.SubharmLowDb,
+                HighDb = vm.SubharmHighDb,
+                TopDb = vm.SubharmTopDb,
+                BoostDb = vm.SubharmBoostDb,
+                OutputMask = vm.SubharmOutputMask,
+                SelectMode = vm.SubharmSelectMode,
+                SelectDepthPct = vm.SubharmSelectDepthPct,
+                SelectHoldMs = vm.SubharmSelectHoldMs,
+                CeilingDb = vm.SubharmCeilingDb,
+                LinkPairs = vm.SubharmLinkPairs,
+            };
+        }
+
+        if (vm.TubeSupported)
+        {
+            doc.Tube = new PresetTubeBlock
+            {
+                Enabled = vm.TubeEnabled,
+                OutputMask = vm.TubeOutputMask,
+                TubeType = vm.TubeType,
+                DriveDb = vm.TubeDriveDb,
+                BiasPct = vm.TubeBiasPct,
+                AsymDb = vm.TubeAsymDb,
+                HardnessPct = vm.TubeHardnessPct,
+                SagPct = vm.TubeSagPct,
+                Rectifier = vm.TubeRectifier,
+                XfmrEnabled = vm.TubeXfmrEnabled,
+                XfmrDamping = vm.TubeXfmrDamping,
+                XfmrResHz = vm.TubeXfmrResHz,
+                MixPct = vm.TubeMixPct,
+                TrimDb = vm.TubeTrimDb,
+            };
+        }
+
         // ── Channels ──
+        int wireInputs = vm.NumInputChannels;
         foreach (var channel in DeviceChannels(vm))
         {
             int id = (int)channel.Id;
@@ -161,7 +203,10 @@ public static class PresetFileService
                 ChannelId = id,
                 Name = vm.GetChannelName(channel),
                 IsOutput = channel.IsOutput,
-                DelayMs = vm.GetChannelDelay(channel),
+                // The channel delay: an input's own, or an output's output
+                // delay, which is also written as OutputDelayMs (as the macOS
+                // Console writes them).
+                DelayMs = vm.GetPreMatrixDelay(id),
             };
 
             if (channel.IsOutput)
@@ -170,6 +215,23 @@ public static class PresetFileService
                 block.GainDb = vm.GetChannelGain(channel);
                 block.Muted = outIndex >= 0 && vm.GetOutputMuted(outIndex);
                 block.Enabled = outIndex >= 0 && vm.IsOutputEnabled(outIndex);
+                block.OutputDelayMs = vm.GetChannelDelay(channel);
+                if (outIndex >= 0)
+                {
+                    block.OutputIndex = outIndex;
+                    block.EqChannel = wireInputs + outIndex;
+                    if (vm.LimiterSupported && outIndex < vm.LimiterOutputs.Count)
+                        block.Limiter = PresetLimiterBlock.From(vm.LimiterOutputs[outIndex]);
+                }
+            }
+            else
+            {
+                int input = Channel.AllInputs.ToList().FindIndex(c => c.Id == channel.Id);
+                if (input >= 0)
+                {
+                    block.InputIndex = input;
+                    block.EqChannel = input;
+                }
             }
 
             foreach (var band in vm.GetFilters(channel))
@@ -317,18 +379,18 @@ public static class PresetFileService
     {
         var report = new PresetApplyReport();
 
-        // Built by hand rather than ToDictionary: a hand-edited file with a
-        // duplicated channel id should apply the last one, not throw.
-        var byId = new Dictionary<int, PresetChannelBlock>();
-        foreach (var c in doc.Channels)
-            byId[c.ChannelId] = c;
-
         var deviceChannels = DeviceChannels(vm).ToList();
         var deviceIds = new HashSet<int>(deviceChannels.Select(c => (int)c.Id));
 
+        // Built by hand rather than ToDictionary: a hand-edited file with a
+        // duplicated channel should apply the last one, not throw.
+        var byId = new Dictionary<int, PresetChannelBlock>();
         foreach (var block in doc.Channels)
-            if (!deviceIds.Contains(block.ChannelId))
-                report.MissingChannels.Add(block.Name);
+        {
+            int? id = ResolveChannel(vm, block);
+            if (id is { } found && deviceIds.Contains(found)) byId[found] = block;
+            else report.MissingChannels.Add(block.Name);
+        }
 
         // Work out the total up front so the progress bar doesn't jump.
         int totalSteps = (options.AudioProcessing ? deviceChannels.Count + doc.Matrix.Count + 1 : 0)
@@ -347,7 +409,7 @@ public static class PresetFileService
                 if (vm.GetInputPairLinked(pair) != linked[pair])
                     vm.SetInputPairLinked(pair, linked[pair]);
 
-            await ApplyChannelsAsync(vm, byId, deviceChannels, report, Tick);
+            await ApplyChannelsAsync(vm, byId, deviceChannels, SplitDelays(doc), report, Tick);
             ApplyMatrix(vm, doc, report, Tick);
             await ApplyFeatureBlocksAsync(vm, doc, report);
             Tick();
@@ -359,6 +421,7 @@ public static class PresetFileService
         if (options.HardwareIo)
         {
             await ApplyIoAsync(vm, doc, report);
+            ApplyLimiters(vm, byId, report);
             Tick();
         }
 
@@ -366,9 +429,51 @@ public static class PresetFileService
         return report;
     }
 
+    /// <summary>
+    /// The app channel a block refers to on this device: by its input or
+    /// output index when the file has one (the macOS Console's numbering, and
+    /// what newer Windows files write too), else by its Windows channel id.
+    /// </summary>
+    private static int? ResolveChannel(MainViewModel vm, PresetChannelBlock block)
+    {
+        if (block.InputIndex is { } input)
+            return input >= 0 && input < Channel.AllInputs.Count ? (int)Channel.AllInputs[input].Id : null;
+        if (block.OutputIndex is { } output)
+            return output >= 0 && output < vm.ActiveOutputs.Count ? (int)vm.ActiveOutputs[output].Id : null;
+        return block.ChannelId;
+    }
+
+    /// <summary>True when the file carries input delays: it keeps an output's
+    /// delay in OutputDelayMs and uses DelayMs as the channel delay, as the
+    /// macOS Console and newer Windows files do. Older Windows files held only
+    /// the output delay, in DelayMs, and no input delays.</summary>
+    private static bool SplitDelays(PresetDocument doc) =>
+        doc.Channels.Any(c => c.OutputDelayMs != null || c.EqChannel != null);
+
+    /// <summary>Output limiters, from each output's block. They follow the
+    /// firmware's output_config_mode like the pins, so they come with the
+    /// hardware option. Applied gang-safely (see ApplyLimiterSettings).</summary>
+    private static void ApplyLimiters(MainViewModel vm, Dictionary<int, PresetChannelBlock> byId, PresetApplyReport report)
+    {
+        var targets = new Dictionary<int, LimiterOutputSettings>();
+        foreach (var (id, block) in byId)
+        {
+            if (block.Limiter is not { } limiter) continue;
+            int output = vm.GetOutputIndex(id);
+            if (output >= 0) targets[output] = limiter.ToSettings();
+        }
+        if (targets.Count == 0) return;
+        if (!vm.LimiterSupported)
+        {
+            report.Skipped.Add("Output limiters (not supported by this firmware)");
+            return;
+        }
+        vm.ApplyLimiterSettings(targets);
+    }
+
     private static async Task ApplyChannelsAsync(
         MainViewModel vm, Dictionary<int, PresetChannelBlock> byId,
-        List<Channel> deviceChannels, PresetApplyReport report, Action tick)
+        List<Channel> deviceChannels, bool splitDelays, PresetApplyReport report, Action tick)
     {
         // Disable outputs first, then enable — an enable can conflict with a
         // channel the document is about to turn off (PDM vs S/PDIF 3 on RP2040).
@@ -407,7 +512,14 @@ public static class PresetFileService
             if (!string.IsNullOrWhiteSpace(block.Name) && block.Name != vm.GetChannelName(channel))
                 vm.SetChannelName(channel, block.Name);
 
-            vm.SetDelay(id, block.DelayMs);
+            // An output's delay is one value in the firmware (the output-delay
+            // SET also sets its channel delay), carried as OutputDelayMs, or as
+            // DelayMs in older Windows files. An input's own delay is DelayMs,
+            // which only files that keep the two apart carry.
+            if (channel.IsOutput)
+                vm.SetDelay(id, block.OutputDelayMs ?? block.DelayMs);
+            else if (splitDelays)
+                vm.SetPreMatrixDelay(id, block.DelayMs);
 
             if (channel.IsOutput)
             {
@@ -585,6 +697,60 @@ public static class PresetFileService
             else
             {
                 report.Skipped.Add("Psychoacoustic bass (not supported by this firmware)");
+            }
+        }
+
+        // Subharmonic synthesizer
+        if (doc.Subharm is { } sb)
+        {
+            if (vm.SubharmSupported)
+            {
+                vm.SubharmLowDb = Math.Clamp(sb.LowDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
+                vm.SubharmHighDb = Math.Clamp(sb.HighDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
+                vm.SubharmBoostDb = Math.Clamp(sb.BoostDb, SubharmLimits.BoostMinDb, SubharmLimits.BoostMaxDb);
+                vm.SubharmOutputMask = sb.OutputMask & 0xFFFF;
+                if (vm.SubharmExtendedSupported)
+                {
+                    vm.SubharmTopDb = Math.Clamp(sb.TopDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
+                    vm.SubharmSelectMode = Math.Clamp(sb.SelectMode, 0, SubharmSelectMode.Max);
+                    vm.SubharmSelectDepthPct = Math.Clamp(sb.SelectDepthPct, SubharmLimits.DepthMinPct, SubharmLimits.DepthMaxPct);
+                    vm.SubharmSelectHoldMs = Math.Clamp(sb.SelectHoldMs, SubharmLimits.HoldMinMs, SubharmLimits.HoldMaxMs);
+                    vm.SubharmCeilingDb = Math.Clamp(sb.CeilingDb, SubharmLimits.CeilingMinDb, SubharmLimits.CeilingMaxDb);
+                    vm.SubharmLinkPairs = sb.LinkPairs;
+                }
+                vm.SubharmEnabled = sb.Enabled;
+            }
+            else
+            {
+                report.Skipped.Add("Subharmonic synth (not supported by this firmware)");
+            }
+        }
+
+        // Tube modeller. The character values go first and the type last: a
+        // type loads its own row, and a character write drops the type to
+        // Custom, so this order leaves both as the file has them.
+        if (doc.Tube is { } tb)
+        {
+            if (vm.TubeSupported)
+            {
+                vm.TubeOutputMask = tb.OutputMask & 0xFFFF;
+                vm.TubeDriveDb = Math.Clamp(tb.DriveDb, TubeLimits.DriveMinDb, TubeLimits.DriveMaxDb);
+                vm.TubeBiasPct = Math.Clamp(tb.BiasPct, TubeLimits.BiasMinPct, TubeLimits.BiasMaxPct);
+                vm.TubeAsymDb = Math.Clamp(tb.AsymDb, TubeLimits.AsymMinDb, TubeLimits.AsymMaxDb);
+                vm.TubeHardnessPct = Math.Clamp(tb.HardnessPct, TubeLimits.HardnessMinPct, TubeLimits.HardnessMaxPct);
+                vm.TubeSagPct = Math.Clamp(tb.SagPct, TubeLimits.SagMinPct, TubeLimits.SagMaxPct);
+                vm.TubeRectifier = Math.Clamp(tb.Rectifier, 0, TubeLimits.RectifierMax);
+                vm.TubeXfmrEnabled = tb.XfmrEnabled;
+                vm.TubeXfmrDamping = Math.Clamp(tb.XfmrDamping, TubeLimits.XfmrDampingMin, TubeLimits.XfmrDampingMax);
+                vm.TubeXfmrResHz = Math.Clamp(tb.XfmrResHz, TubeLimits.XfmrResMinHz, TubeLimits.XfmrResMaxHz);
+                vm.TubeMixPct = Math.Clamp(tb.MixPct, TubeLimits.MixMinPct, TubeLimits.MixMaxPct);
+                vm.TubeTrimDb = Math.Clamp(tb.TrimDb, TubeLimits.TrimMinDb, TubeLimits.TrimMaxDb);
+                vm.TubeType = Math.Clamp(tb.TubeType, 0, TubeLimits.TypeMax);
+                vm.TubeEnabled = tb.Enabled;
+            }
+            else
+            {
+                report.Skipped.Add("Tube modeller (not supported by this firmware)");
             }
         }
 

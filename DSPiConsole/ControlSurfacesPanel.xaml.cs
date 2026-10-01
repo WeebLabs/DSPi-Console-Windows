@@ -873,7 +873,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             return Row("Step (positions)", box);
         }
         // Hz/Q step is in octaves; dB/%/ms linear.
-        string label = nd.Unit is CsUnit.Hz or CsUnit.Q ? "Step (octaves)" : StepLabel(nd.Unit);
+        string label = CsWire.UnitStepsInOctaves(nd.Unit) ? "Step (octaves)" : StepLabel(nd.Unit);
         var stepBox = NumberField(CsWire.DecodeStep(draft.Step, nd.Unit), CsUnit.None, v =>
         { _drafts[slot].Step = CsWire.EncodeStep(v, nd.Unit); RefreshStatusIndicators(); });
         return Row(label, stepBox);
@@ -1506,7 +1506,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         if (draft.Noun == (byte)CsNoun.PageValue) return null;
         if (action is CsAction.Inc or CsAction.Dec)
         {
-            string label = nd.Unit is CsUnit.Hz or CsUnit.Q ? "Step (octaves)"
+            string label = CsWire.UnitStepsInOctaves(nd.Unit) ? "Step (octaves)"
                 : nd.Unit == CsUnit.None ? "Step (positions)" : StepLabel(nd.Unit);
             var box = NumberField(CsWire.DecodeStep(draft.Step, nd.Unit), CsUnit.None, v =>
                 _irDrafts[sub].Step = CsWire.EncodeStep(v, nd.Unit));
@@ -2046,6 +2046,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         {
             var nd = _vm.CsNounDescs[n];
             if (nd == null || !nd.IsAvailable) continue;
+            // Aux-output nouns (caps v17) target a binding slot holding an aux
+            // output, which this window cannot configure yet.
+            if (nd.TargetKind == CsTarget.Aux) continue;
             // Only nouns whose action set intersects this component's actions.
             if (typeDesc != null && (typeDesc.Value.Actions & nd.Actions) == 0) continue;
             yield return (n, nd);
@@ -2060,7 +2063,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         for (int n = 0; n < _vm.CsNounDescs.Count; n++)
         {
             var nd = _vm.CsNounDescs[n];
-            if (nd == null || !nd.IsAvailable) continue;
+            if (nd == null || !nd.IsAvailable || nd.TargetKind == CsTarget.Aux) continue;
             if (btn != null && (btn.Value.Actions & nd.Actions) == 0) continue;
             yield return (n, nd);
         }

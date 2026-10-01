@@ -462,7 +462,9 @@ public sealed partial class SettingsShell : UserControl
         // Clock mode, clock pins, BCK, slave BCK, RX pins and channel count are
         // all one page now.
         : key.StartsWith("io.i2s-") || key.StartsWith("io.bck") ? "hardware.i2s"
-        : "hardware.output-assignment";                      // io.pin.* / io.slot.*
+        // io.pin.* / io.slot.*, and io.limiter.*: the limiter has no settings
+        // page (it lives on the channel page), so its outputs' page owns it.
+        : "hardware.output-assignment";
 
     private async void OnDiscardClick(object sender, RoutedEventArgs e)
     {

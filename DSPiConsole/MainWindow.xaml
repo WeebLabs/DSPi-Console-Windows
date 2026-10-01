@@ -1,4 +1,4 @@
-<Window
+﻿<Window
     x:Class="DSPiConsole.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -576,6 +576,19 @@
                             Visibility="Collapsed" />
                 </Grid>
             </Grid>
+
+            <!-- Firmware mismatch: across the whole window, drawn over the top
+                 of the panes so the layout never moves when it appears. Shown
+                 only when the device's firmware differs from what this Console
+                 expects; Close hides it until the app is next started. -->
+            <InfoBar x:Name="FirmwareMismatchBar" Grid.ColumnSpan="2"
+                     VerticalAlignment="Top" Margin="8,4,8,0"
+                     Canvas.ZIndex="10" Severity="Warning" IsOpen="False"
+                     Closed="OnFirmwareMismatchBarClosed">
+                <InfoBar.ActionButton>
+                    <Button x:Name="FirmwareMismatchButton" Click="OnFirmwareMismatchActionClick"/>
+                </InfoBar.ActionButton>
+            </InfoBar>
         </Grid>
     </Grid>
 </Window>

@@ -63,8 +63,14 @@ public partial class MainViewModel
         { Task.Run(FetchLoudness); return; }
         if (off >= BulkParamsParser.OffsetCrossfeed && off < BulkParamsParser.OffsetLegacy)
         { Task.Run(FetchCrossfeed); return; }
-        // Upmix section sits above psybass in the struct — match it first, or the
-        // open-ended psybass range would swallow upmix offsets.
+        // The appended sections are matched from the last one down: each range
+        // is open-ended, so an earlier one would swallow every later section.
+        if (off >= BulkParamsParser.OffsetLimiter)
+        { Task.Run(FetchLimiter); return; }
+        if (off >= BulkParamsParser.OffsetTube)
+        { Task.Run(FetchTube); return; }
+        if (off >= BulkParamsParser.OffsetSubharm)
+        { Task.Run(FetchSubharm); return; }
         if (off >= BulkParamsParser.OffsetUpmix)
         { Task.Run(FetchUpmix); return; }
         if (off >= BulkParamsParser.OffsetPsybass)
@@ -175,17 +181,21 @@ public partial class MainViewModel
             }
             else changed = false;
         }
-        // Per-channel delays.
+        // Per-channel delays. On an output this is the output delay itself (the
+        // firmware's output-delay SET writes both and reports both); on an
+        // input it is that input's own delay.
         else if (off >= BulkParamsParser.OffsetDelays && off < BulkParamsParser.OffsetCrosspoints && p.Length >= 4)
         {
             int wireCh = (off - BulkParamsParser.OffsetDelays) / 4;
             int appId = ChannelMap.WireToApp(wireCh, NumInputChannels);
-            if (appId >= 0)
+            float ms = BitConverter.ToSingle(p, 0);
+            if (appId < 0) changed = false;
+            else if (IsInputChannelId(appId)) ApplyNotifiedInputChannelDelay(appId, ms);
+            else
             {
-                _channelDelays[appId] = BitConverter.ToSingle(p, 0);
+                _channelDelays[appId] = ms;
                 if (appId >= 2 && appId <= 10) MatrixOutputDelayChanged?.Invoke(appId - 2);
             }
-            else changed = false;
         }
         else changed = false;
 
