@@ -26,6 +26,10 @@ public sealed partial class GraphingGridLabelsPage : SettingsModule, ISettingsPa
             DbGridToggle.IsOn = s.ShowDbGrid;
             DbLabelsToggle.IsOn = s.ShowDbLabels;
             DbUnitsToggle.IsOn = s.ShowDbUnits;
+            GridOpacitySlider.Value = Math.Round(s.GraphGridOpacity * 100);
+            UpdateGridOpacityDescription(s.GraphGridOpacity);
+            FreqReadoutToggle.IsOn = s.ShowFrequencyReadout;
+            GainReadoutToggle.IsOn = s.ShowGainReadout;
         }
         finally { _suppress = false; }
     }
@@ -44,6 +48,24 @@ public sealed partial class GraphingGridLabelsPage : SettingsModule, ISettingsPa
 
     private void OnDbUnitsToggled(object sender, RoutedEventArgs e)
         => Commit(b => AppSettings.Instance.ShowDbUnits = b, DbUnitsToggle.IsOn);
+
+    private void UpdateGridOpacityDescription(double v) =>
+        GridOpacityCard.Description = $"0% hides the grid, 100% is standard, 200% twice as strong. Current: {Math.Round(v * 100)}%";
+
+    private void OnGridOpacityChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        UpdateGridOpacityDescription(e.NewValue / 100.0);
+        if (_suppress) return;
+        AppSettings.Instance.GraphGridOpacity = e.NewValue / 100.0;
+        AppSettings.Instance.Save();
+        AppSettings.Instance.NotifyChanged();
+    }
+
+    private void OnFreqReadoutToggled(object sender, RoutedEventArgs e)
+        => Commit(b => AppSettings.Instance.ShowFrequencyReadout = b, FreqReadoutToggle.IsOn);
+
+    private void OnGainReadoutToggled(object sender, RoutedEventArgs e)
+        => Commit(b => AppSettings.Instance.ShowGainReadout = b, GainReadoutToggle.IsOn);
 
     private void Commit(System.Action<bool> setter, bool v)
     {

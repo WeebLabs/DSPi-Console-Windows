@@ -11,11 +11,22 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border CornerRadius="8"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-            <controls:BodePlotControl x:Name="BodePlot" />
-        </Border>
+        <Grid x:Name="GraphArea" PointerEntered="OnGraphAreaPointerEntered" PointerExited="OnGraphAreaPointerExited">
+            <Border CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <controls:BodePlotControl x:Name="BodePlot" />
+            </Border>
+            <Button x:Name="GraphOptionsButton"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,8,0" Padding="6"
+                    Background="Transparent" BorderThickness="0"
+                    Opacity="0"
+                    ToolTipService.ToolTip="Graph options"
+                    Click="OnGraphOptionsClick">
+                <FontIcon Glyph="&#xE713;" FontSize="14"/>
+            </Button>
+        </Grid>
 
         <StackPanel x:Name="LegendPanel" Grid.Row="1" Orientation="Horizontal"
                     Spacing="8" Margin="0,8,0,0" HorizontalAlignment="Center" />

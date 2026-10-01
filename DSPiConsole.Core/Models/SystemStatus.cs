@@ -23,14 +23,15 @@ public class SystemStatus
     public int Cpu1Load { get; set; }
 
     /// <summary>
-    /// Sticky clip bitmask from firmware (one bit per channel)
+    /// Sticky clip bitmask from firmware, one bit per app channel id (0..16 —
+    /// id 16 needs the 32-bit field)
     /// </summary>
-    public ushort ClipFlags { get; set; }
+    public uint ClipFlags { get; set; }
 
     /// <summary>
     /// App-side latched clip flags (OR'd from firmware flags over time)
     /// </summary>
-    public ushort ClipLatched { get; set; }
+    public uint ClipLatched { get; set; }
 
     /// <summary>
     /// When the last clip was detected
@@ -40,5 +41,5 @@ public class SystemStatus
     public float GetPeak(ChannelId channel) => Peaks[(int)channel];
 
     public bool IsClipping(ChannelId channel) =>
-        (ClipLatched & (1 << (int)channel)) != 0;
+        (ClipLatched & (1u << (int)channel)) != 0;
 }

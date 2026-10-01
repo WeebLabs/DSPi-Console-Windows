@@ -36,7 +36,7 @@ public sealed partial class BodePlotControl : UserControl
     {
         if (_selectedChannelId == channelId) return;
         _selectedChannelId = channelId;
-        ResetEditState();
+        RefreshEditor(redraw: false);
         Redraw(gridChanged: true);
     }
 
@@ -164,7 +164,7 @@ public sealed partial class BodePlotControl : UserControl
         _rootGrid.Children.Add(_dbScaleHitArea);
         Content = _rootGrid;
 
-        InitializeEditing();   // on-graph band handles (BodePlotControl.Editing.cs)
+        InitializeEditing();   // on-graph band editor (BodePlotControl.Editor.cs)
 
         _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _animTimer.Tick += OnAnimationTick;
@@ -202,13 +202,13 @@ public sealed partial class BodePlotControl : UserControl
                 Array.Copy(_targetMagnitudes[id], _currentMagnitudes[id], NumPoints);
                 Array.Copy(_targetPhases[id], _currentPhases[id], NumPoints);
             }
+            AttachEditor();
             Redraw(gridChanged: true);
         }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        ResetEditState();
         _animTimer.Stop();
         _isAnimating = false;
         if (_viewModel != null)
@@ -224,23 +224,19 @@ public sealed partial class BodePlotControl : UserControl
 
     private void OnFiltersChanged(object? sender, EventArgs e)
     {
-        // While a handle drag is live the curve must track the pointer 1:1 —
-        // the lerp animation would read as lag — so snap instead of animating.
-        if (_editDragActive)
-        {
-            UpdateTargets();
-            SnapToTargets();
-            Redraw(gridChanged: false);
-            return;
-        }
         UpdateTargets();
         StartAnimation();
+        RefreshEditor();
     }
 
-    private void OnOutputGainChanged(int outputIndex) => OnLevelOffsetChanged();
-    private void OnPreampExtChanged(int wireInput) => OnLevelOffsetChanged();
+    private void OnOutputGainChanged(int outputIndex) { OnLevelOffsetChanged(); RefreshEditor(); }
+    private void OnPreampExtChanged(int wireInput) { OnLevelOffsetChanged(); RefreshEditor(); }
 
-    private void OnVisibilityChanged(object? sender, EventArgs e) => Redraw(gridChanged: true);
+    private void OnVisibilityChanged(object? sender, EventArgs e)
+    {
+        RefreshEditor(redraw: false);
+        Redraw(gridChanged: true);
+    }
     private void OnSettingsChanged(object? sender, EventArgs e)
     {
         if (_dbScaleHitArea != null)
@@ -253,6 +249,7 @@ public sealed partial class BodePlotControl : UserControl
         // Show Phase changes RightMargin — refresh the canvas clip too, or the
         // wider grid stays sheared at the old phase-axis edge until a resize.
         UpdatePlotClip();
+        RefreshEditor(redraw: false);
         Redraw(gridChanged: true);
     }
 
@@ -272,16 +269,30 @@ public sealed partial class BodePlotControl : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueue(() => OnViewModelPropertyChanged(sender, e));
+            return;
+        }
         if (e.PropertyName == nameof(MainViewModel.Bypass))
         {
             UpdateTargets();
             StartAnimation();
+            RefreshEditor();
+        }
+        else if (e.PropertyName is nameof(MainViewModel.IsDeviceConnected)
+                                or nameof(MainViewModel.BandBypassSupported)
+                                or nameof(MainViewModel.FirstOrderPassSupported)
+                                or nameof(MainViewModel.CrossoverSupported))
+        {
+            RefreshEditor();
         }
         // Preamp moves the input curves when the level-includes-gain setting is on.
         else if (e.PropertyName is nameof(MainViewModel.InputPreampLDb)
                                 or nameof(MainViewModel.InputPreampRDb))
         {
             OnLevelOffsetChanged();
+            RefreshEditor();
         }
     }
 
@@ -317,16 +328,7 @@ public sealed partial class BodePlotControl : UserControl
             Rect = new Windows.Foundation.Rect(LeftMargin, TopMargin, plotWidth, plotHeight)
         };
 
-        // The edit overlay draws a band-solo curve over the full 10–20k data
-        // range; clip it to the plot rect like the curves so the fill can't
-        // bleed into the axis label gutters.
-        if (_editCanvas != null)
-        {
-            _editCanvas.Clip = new RectangleGeometry
-            {
-                Rect = new Windows.Foundation.Rect(LeftMargin, TopMargin, plotWidth, plotHeight)
-            };
-        }
+        LayoutEditor();
     }
 
     private void UpdateTargets()
@@ -533,12 +535,21 @@ public sealed partial class BodePlotControl : UserControl
             DrawLabels(plotWidth, plotHeight);
             DrawCurves(plotWidth, plotHeight);
         }
+        else if (GroupsKey(CurveGroups()) != _drawnGroups)
+        {
+            // Curves that were identical have parted (or met) mid-animation.
+            _plotCanvas.Children.Clear();
+            _labelCanvas.Children.Clear();
+            _channelPolylines.Clear();
+            _phaseLines.Clear();
+            DrawGrid(plotWidth, plotHeight);
+            DrawLabels(plotWidth, plotHeight);
+            DrawCurves(plotWidth, plotHeight);
+        }
         else
         {
             UpdateCurvePoints(plotWidth, plotHeight);
         }
-
-        UpdateEditOverlay(plotWidth, plotHeight);
     }
 
     private void DrawGrid(double plotWidth, double plotHeight)
@@ -548,8 +559,8 @@ public sealed partial class BodePlotControl : UserControl
         // Frequency grid (vertical lines)
         if (settings.ShowFrequencyGrid)
         {
-            var minorColor = Color.FromArgb(15, 255, 255, 255);
-            var majorColor = Color.FromArgb(38, 255, 255, 255);
+            var minorColor = GridColor(15);
+            var majorColor = GridColor(38);
 
             // All decade subdivisions from 10 to 20000
             float[] decades = { 10, 100, 1000, 10000 };
@@ -589,8 +600,8 @@ public sealed partial class BodePlotControl : UserControl
         // dB grid (horizontal lines)
         if (settings.ShowDbGrid)
         {
-            var gridColor = Color.FromArgb(25, 255, 255, 255);
-            var zeroLineColor = Color.FromArgb(76, 255, 255, 255);
+            var gridColor = GridColor(25);
+            var zeroLineColor = GridColor(76);
 
             double step = GetDbStep();
             // Find first grid line at or above DbBottom
@@ -610,6 +621,11 @@ public sealed partial class BodePlotControl : UserControl
             }
         }
     }
+
+    /// <summary>A grid line at its standard alpha, scaled by Grid Opacity
+    /// (0 hides the grid, 1 is standard, 2 twice as strong).</summary>
+    private static Color GridColor(int standardAlpha) =>
+        Color.FromArgb((byte)Math.Clamp(Math.Round(standardAlpha * AppSettings.Instance.GraphGridOpacity), 0, 255), 255, 255, 255);
 
     private void DrawLabels(double plotWidth, double plotHeight)
     {
@@ -704,6 +720,41 @@ public sealed partial class BodePlotControl : UserControl
         }
     }
 
+    /// <summary>The curves drawn last, as groups of channels sharing one
+    /// identical curve (leader first).</summary>
+    private string _drawnGroups = "";
+
+    /// <summary>
+    /// Visible channels grouped by identical curves: several channels with the
+    /// same response are drawn as one line with a colour gradient (macOS
+    /// Console). The channel being edited on the graph is left out — the editor
+    /// overlay draws it, curve and all.
+    /// </summary>
+    private List<List<int>> CurveGroups()
+    {
+        var groups = new List<List<int>>();
+        if (_viewModel == null) return groups;
+        foreach (var channel in Channel.All)
+        {
+            var id = (int)channel.Id;
+            if (id == _editedChannelId || !IsChannelVisible(channel)) continue;
+            if (!_currentMagnitudes.TryGetValue(id, out var mags)) continue;
+            var home = groups.FirstOrDefault(g => SameCurve(_currentMagnitudes[g[0]], mags));
+            if (home != null) home.Add(id); else groups.Add(new List<int> { id });
+        }
+        return groups;
+    }
+
+    private static bool SameCurve(float[] a, float[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (Math.Abs(a[i] - b[i]) > 0.01f) return false;
+        return true;
+    }
+
+    private static string GroupsKey(List<List<int>> groups) =>
+        string.Join("|", groups.Select(g => string.Join(",", g)));
+
     private void DrawCurves(double plotWidth, double plotHeight)
     {
         if (_viewModel == null) return;
@@ -711,38 +762,22 @@ public sealed partial class BodePlotControl : UserControl
         var settings = AppSettings.Instance;
         bool showGlow = settings.ShowGraphGlow;
         float lineWidth = (float)settings.GraphLineWidth;
+        var groups = CurveGroups();
+        _drawnGroups = GroupsKey(groups);
 
-        foreach (var channel in Channel.All)
+        foreach (var group in groups)
         {
-            var id = (int)channel.Id;
-
-            if (_ignoreVisibility)
-            {
-                // Use local visibility; still hide disabled outputs
-                if (!GetLocalVisibility(id))
-                    continue;
-                if (channel.IsOutput)
-                {
-                    int outputIndex = _viewModel.GetOutputIndex(id);
-                    if (outputIndex < 0 || !_viewModel.IsOutputEnabled(outputIndex))
-                        continue;
-                }
-            }
-            else
-            {
-                if (!_viewModel.GetChannelVisibility(channel))
-                    continue;
-            }
-
-            if (!_currentMagnitudes.ContainsKey(id)) continue;
-
+            var id = group[0];
+            var channel = Channel.FromId((ChannelId)id);
             var magnitudes = _currentMagnitudes[id];
             var polylines = new List<Polyline>();
 
             var points = BuildPoints(magnitudes, plotWidth, plotHeight);
-            // Don't dot linked-pair inputs — both members of the pair are "active"
-            bool isLinkedInput = _linkedInputIds.Contains(id);
-            bool isDotted = _dottedInactiveEnabled && _selectedChannelId >= 0 && id != _selectedChannelId && !isLinkedInput;
+            // Don't dot linked-pair inputs — both members of the pair are "active" —
+            // nor a shared line the selected channel is part of.
+            bool isLinkedInput = group.Any(_linkedInputIds.Contains);
+            bool isDotted = _dottedInactiveEnabled && _selectedChannelId >= 0
+                            && !group.Contains(_selectedChannelId) && !isLinkedInput;
             var dashArray = isDotted ? new DoubleCollection { 4, 3 } : null;
 
             if (showGlow && !isDotted)
@@ -768,20 +803,33 @@ public sealed partial class BodePlotControl : UserControl
                 polylines.Add(innerGlow);
             }
 
-            // Use gradient stroke for linked-pair input channels
-            Brush strokeBrush;
-            if (isLinkedInput)
+            // One line for several identical curves blends their colours; a
+            // linked input pair always does.
+            var colors = group.Select(g => Channel.FromId((ChannelId)g).Color).ToList();
+            if (group.Count == 1 && _linkedInputIds.Contains(id))
             {
                 int partnerId = ChannelMap.LinkedPartnerId(id);
-                var first = Channel.FromId((ChannelId)Math.Min(id, partnerId));
-                var second = Channel.FromId((ChannelId)Math.Max(id, partnerId));
+                colors = new List<Color>
+                {
+                    Channel.FromId((ChannelId)Math.Min(id, partnerId)).Color,
+                    Channel.FromId((ChannelId)Math.Max(id, partnerId)).Color,
+                };
+            }
+            Brush strokeBrush;
+            if (colors.Count > 1)
+            {
                 var gradient = new LinearGradientBrush
                 {
                     StartPoint = new Windows.Foundation.Point(0, 0.5),
                     EndPoint = new Windows.Foundation.Point(1, 0.5)
                 };
-                gradient.GradientStops.Add(new GradientStop { Color = first.Color, Offset = 0.3 });
-                gradient.GradientStops.Add(new GradientStop { Color = second.Color, Offset = 0.7 });
+                for (int i = 0; i < colors.Count; i++)
+                {
+                    // Two colours meet in the middle third, as the linked pair
+                    // gradient always did; more spread evenly.
+                    double offset = colors.Count == 2 ? (i == 0 ? 0.3 : 0.7) : (double)i / (colors.Count - 1);
+                    gradient.GradientStops.Add(new GradientStop { Color = colors[i], Offset = offset });
+                }
                 strokeBrush = gradient;
             }
             else
@@ -800,8 +848,8 @@ public sealed partial class BodePlotControl : UserControl
             _plotCanvas!.Children.Add(mainLine);
             polylines.Add(mainLine);
 
-            foreach (var p in polylines)
-                p.Opacity = _curveOpacity;
+            foreach (var pl in polylines)
+                pl.Opacity = _curveOpacity;
             _channelPolylines[id] = polylines;
         }
 
@@ -925,13 +973,9 @@ public sealed partial class BodePlotControl : UserControl
         var delta = e.GetCurrentPoint(this).Properties.MouseWheelDelta;
         var settings = AppSettings.Instance;
 
-        // Scroll up = zoom in (smaller range), scroll down = zoom out (larger range)
-        double step = settings.GraphDbRange <= 20 ? 2 : 5;
-        double newRange = delta > 0
-            ? settings.GraphDbRange - step
-            : settings.GraphDbRange + step;
-
-        newRange = Math.Clamp(newRange, 10, 100);
+        // Scroll up = zoom in (smaller range), scroll down = zoom out. Continuous:
+        // 3 dB a mouse notch, finer steps from a precision touchpad.
+        double newRange = Math.Clamp(settings.GraphDbRange - delta / 120.0 * 3.0, 10, 100);
         if (Math.Abs(newRange - settings.GraphDbRange) > 0.01)
         {
             settings.GraphDbRange = newRange;

@@ -1,18 +1,31 @@
 # Changelog
 
-## 2026-08-27
+## 2026-10-01
 
-### On-Graph Filter Editing
-- PEQ and crossover bands of the selected channel now appear as draggable handles directly on the response graph (numbered circles for PEQ, diamonds for crossovers), in both the main graph and the pop-out
-- Drag a handle to set frequency and gain (frequency only for cuts/notch/all-pass and crossovers); the curve and the device track the drag live
-- Shift+drag for fine adjustment, Ctrl+drag to lock to the dominant axis
-- Mouse wheel over a handle adjusts Q (Shift = fine); on a crossover handle it steps the slope through the family's orders
-- Alt+click toggles band bypass; bypassed bands render as hollow handles
-- Hovering or selecting a band shows its isolated response curve with a soft fill, plus a readout chip (frequency · gain · Q)
-- Double-click empty graph space to add a Peaking band at the pointer; double-click or right-click a handle for a compact editor flyout (type/family, values, bypass, remove)
-- Delete removes the selected band, Esc deselects
-- Selecting a crossover handle automatically flips the band list to the XO page (and vice versa)
-- Toggleable via Settings → Graphing → Style → "Edit filters on the graph" (on by default)
+### On-Graph Filter Editing (macOS design)
+- PEQ bands of the selected channel appear on the response graph as dots in a per-band colour, each with a soft fill showing its own contribution; hovering or selecting brightens a band and draws its outline, and a bypassed band stays as a grey ghost
+- Double-click empty graph to add a bell, Ctrl-click to choose a shape (and its slope) from a card, or pull a new band out of the curve itself
+- Click, Ctrl-click, Shift-click and box selection; Ctrl+A and Tab; band numbers in the list select too, and rows light up with the graph
+- Drag moves a band (Q for 12 dB cuts), several selected bands move together, Shift is fine, Alt locks an axis, Ctrl from the start drags Q, Ctrl pressed mid-drag scales the selection's gains in proportion; Alt-click bypasses
+- Wheel over a dot or fill changes Q, Ctrl-wheel gain; a scroll stays with its band and a selection owns the wheel
+- A band chip beside the dot: drag, scroll or type values (note names such as A4 accepted), a two-step shape and slope page, and a bypass button
+- Right-click menus for a band (slope, bypass, invert gain, delete) and for empty graph; Delete, Escape, arrow and Alt-arrow keys
+- The device follows a drag live, and the model is written once, on release; editing pauses on the XO tab
+- With "Gain affects displayed level" on, the dots and fills move with the channel's gain or preamp along with the curve, and a band placed at a point lands there
+- A gear on the graph opens Graph Setup and Pop Out Graph; new Grid Opacity, Frequency Readout and Gain Readout settings; glow on and 15 Hz by default
+- Identical curves draw as one line with a colour gradient; the graph can be made as short as 200 px; a button stands in for the graph while it is popped out
+
+### Fixes
+- Preset files write their pin lists as number arrays, so they open in the macOS Console (and Mac files open here); older files still read
+- Output delay is limited to what the firmware's delay line holds (42 ms on RP2350, 21 ms on RP2040), and typed delays apply on Enter rather than per keystroke
+- Clip indicators read the firmware's 32-bit clip field, so PDM and the eighth input can show a clip
+- Bypassing all crossover bands asks first
+- The 6 dB low and high cuts are offered only on firmware that has them
+- Narrow, very low bells draw at their true height
+- Tool-window shortcuts follow the macOS Console; the volume leveller has a menu item (Ctrl+Shift+V)
+- Switching devices with unsaved Settings changes asks first
+- Channel names are kept to the 31 bytes the device stores
+- The device's report of a filter change the app itself made is no longer taken for another host's change; each one rebuilt the band list and the graph, which made graph drags crawl
 
 ## 2026-03-22
 

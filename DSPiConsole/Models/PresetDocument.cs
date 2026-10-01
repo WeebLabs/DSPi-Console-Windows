@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using DSPiConsole.Core.Models;
 
 namespace DSPiConsole.Models;
@@ -224,10 +226,15 @@ public sealed class PresetIoBlock
     public byte I2sClockPinMode { get; set; }   // 0=unified, 1=split
     public byte I2sBckPinSlave { get; set; }
 
-    /// <summary>S/PDIF RX GPIOs for inputs 1..4 (index 0 is the primary). Files
-    /// written before the fourth input carry three entries; readers must use the
-    /// array's own length rather than assuming.</summary>
-    public byte[] SpdifRxPins { get; set; } = new byte[4];
+    /// <summary>S/PDIF RX GPIOs for inputs 1..3 (index 0 is the primary). Three
+    /// entries, matching the schema the macOS Console shares; the fourth input's
+    /// pin travels in <see cref="SpdifRxPin4"/> so a reader that indexes this
+    /// array by a fixed length can't walk off the end. Older Windows files wrote
+    /// four entries here — <see cref="SpdifRxPinAt"/> still honours those.</summary>
+    public byte[] SpdifRxPins { get; set; } = new byte[3];
+
+    /// <summary>GPIO for the fourth S/PDIF input, which the shared schema predates.</summary>
+    public byte? SpdifRxPin4 { get; set; }
 
     /// <summary>Enable mask for the optional S/PDIF inputs: bit 0 = input 2,
     /// bit 1 = input 3, bit 2 = input 4.</summary>
@@ -245,6 +252,17 @@ public sealed class PresetIoBlock
     public byte AdatInputClockMode { get; set; }
 
     public PresetDacHwMuteBlock? DacHwMute { get; set; }
+
+    /// <summary>Number of S/PDIF input pins the document carries.</summary>
+    [JsonIgnore]
+    public int SpdifRxPinCount =>
+        SpdifRxPin4.HasValue ? Math.Max(SpdifRxPins.Length, 4) : SpdifRxPins.Length;
+
+    /// <summary>The RX pin for S/PDIF input <paramref name="index"/> (0-based),
+    /// whichever of the two layouts the file used.</summary>
+    public byte SpdifRxPinAt(int index) =>
+        index == 3 && SpdifRxPin4.HasValue ? SpdifRxPin4.Value
+        : index < SpdifRxPins.Length ? SpdifRxPins[index] : (byte)0;
 }
 
 public sealed class PresetDacHwMuteBlock
@@ -254,4 +272,60 @@ public sealed class PresetDacHwMuteBlock
     public byte Pin { get; set; } = DacHwMuteConfig.PinNone;
     public ushort HoldMs { get; set; }
     public ushort ReleaseMs { get; set; }
+}
+
+/// <summary>
+/// JSON settings for <see cref="PresetDocument"/>. Byte arrays are written as
+/// number arrays — the form the macOS Console reads and writes — rather than
+/// System.Text.Json's default base64 string, which a Mac reader can't decode.
+/// </summary>
+public static class PresetDocumentJson
+{
+    public static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new ByteArrayAsNumbersConverter() },
+    };
+
+    public static readonly JsonSerializerOptions ReadOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new ByteArrayAsNumbersConverter() },
+    };
+}
+
+/// <summary>Writes <c>byte[]</c> as <c>[6, 7, 8]</c>; reads either that or the
+/// base64 string earlier Windows builds wrote.</summary>
+public sealed class ByteArrayAsNumbersConverter : JsonConverter<byte[]>
+{
+    public override byte[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.String:
+                return reader.GetBytesFromBase64();
+            case JsonTokenType.StartArray:
+                var bytes = new List<byte>();
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                {
+                    if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt32(out int v) || v < 0 || v > 255)
+                        throw new JsonException("Expected a byte value (0-255).");
+                    bytes.Add((byte)v);
+                }
+                return bytes.ToArray();
+            default:
+                throw new JsonException($"Unexpected token {reader.TokenType} for a byte array.");
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        foreach (byte b in value) writer.WriteNumberValue(b);
+        writer.WriteEndArray();
+    }
 }

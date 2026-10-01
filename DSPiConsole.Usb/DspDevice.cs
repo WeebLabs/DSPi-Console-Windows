@@ -1064,19 +1064,21 @@ public partial class DspDevice : ObservableObject, IDisposable
         int cpu0 = cpuOffset < buffer.Length ? buffer[cpuOffset] : 0;
         int cpu1 = cpuOffset + 1 < buffer.Length ? buffer[cpuOffset + 1] : 0;
 
-        ushort clipFlags = 0;
+        uint clipFlags = 0;
         int clipOffset = cpuOffset + 2;
         if (clipOffset + 1 < buffer.Length)
         {
-            // clip field is 16 bits on the wire; remap each set bit from wire
-            // channel to app channel id (wire channel 16, RP2350 PDM, cannot be
-            // represented in a 16-bit field and is therefore not carried).
-            ushort wireClip = BitConverter.ToUInt16(buffer, clipOffset);
-            for (int i = 0; i < numCh && i < 16; i++)
+            // clip_flags is 32 bits on the wire (one bit per wire channel, so
+            // RP2350's PDM at wire channel 16 fits). Remap each set bit from wire
+            // channel to app channel id.
+            uint wireClip = clipOffset + 3 < buffer.Length
+                ? BitConverter.ToUInt32(buffer, clipOffset)
+                : BitConverter.ToUInt16(buffer, clipOffset);
+            for (int i = 0; i < numCh && i < 32; i++)
             {
-                if ((wireClip & (1 << i)) == 0) continue;
+                if ((wireClip & (1u << i)) == 0) continue;
                 int appId = ChannelMap.WireToApp(i, NumInputChannels);
-                if (appId >= 0) clipFlags |= (ushort)(1 << appId);
+                if (appId >= 0 && appId < 32) clipFlags |= 1u << appId;
             }
         }
 
@@ -1264,8 +1266,50 @@ public partial class DspDevice : ObservableObject, IDisposable
         if (isLt)
             BitConverter.GetBytes(p.QpEncoded).CopyTo(data, 16);
 
+        ExpectEcho(channel, band, p);
         return ControlTransferOut(VendorCommands.SetEqParam, 0, data);
     }
+
+    // ── Echoes of our own filter writes ──
+    // The firmware applies an EQ write later, in its main loop, outside the
+    // USB request that carried it, so the PARAM_CHANGED it reports for the
+    // write is tagged UNKNOWN rather than HOST_SET. Without this, every write
+    // the app makes (a graph drag sends about 30 a second) would come back
+    // looking like another host's change. Each write is remembered until its
+    // echo arrives; the firmware applies only the latest of writes that queue
+    // up, so an echo also retires every older write to the same band.
+
+    private const int MaxPendingEchoes = 32;
+    private readonly Dictionary<(int Channel, int WireBand), List<FilterParams>> _pendingEchoes = new();
+
+    private void ExpectEcho(int channel, int wireBand, FilterParams p)
+    {
+        lock (_pendingEchoes)
+        {
+            if (!_pendingEchoes.TryGetValue((channel, wireBand), out var list))
+                _pendingEchoes[(channel, wireBand)] = list = new List<FilterParams>();
+            list.Add(p.Clone());
+            if (list.Count > MaxPendingEchoes) list.RemoveAt(0);
+        }
+    }
+
+    /// <summary>True when <paramref name="p"/> is the firmware reporting a value
+    /// this app wrote to (channel, wire band); consumes that write.</summary>
+    private bool IsOwnEcho(int channel, int wireBand, FilterParams p)
+    {
+        lock (_pendingEchoes)
+        {
+            if (!_pendingEchoes.TryGetValue((channel, wireBand), out var list)) return false;
+            int i = list.FindLastIndex(w => SameOnWire(w, p));
+            if (i < 0) return false;
+            list.RemoveRange(0, i + 1);
+            return true;
+        }
+    }
+
+    private static bool SameOnWire(FilterParams a, FilterParams b) =>
+        a.Type == b.Type && a.Frequency == b.Frequency && a.Q == b.Q && a.Gain == b.Gain
+        && a.Bypass == b.Bypass && a.QpEncoded == b.QpEncoded;
 
     /// <summary>
     /// Get EQ filter parameters for a specific channel and band.
@@ -1519,11 +1563,12 @@ public partial class DspDevice : ObservableObject, IDisposable
 
     /// <summary>
     /// Get system status (peak levels, CPU load, clip flags).
-    /// wValue=9 requests full status. Packet size = numChannels*2 + 2 (CPU) + 2 (clipFlags).
+    /// wValue=9 requests full status: peaks[numChannels]×2, cpu0, cpu1,
+    /// clip_flags (u32), active_input_channels (u8).
     /// </summary>
     public SystemStatus? GetStatus()
     {
-        int packetSize = NumChannels * 2 + 4; // peaks + cpu0 + cpu1 + clipFlags(2)
+        int packetSize = NumChannels * 2 + 7; // peaks + cpu0 + cpu1 + clipFlags(4) + active inputs
         var response = ControlTransferIn(VendorCommands.GetStatus, 9, packetSize);
 
         if (response == null || response.Length < NumChannels * 2 + 2)
@@ -2344,6 +2389,7 @@ public partial class DspDevice : ObservableObject, IDisposable
                     var bandBuf = new byte[BulkParamsParser.WireBandSize];
                     Buffer.BlockCopy(buf, 12, bandBuf, 0, BulkParamsParser.WireBandSize);
                     var fp = BulkParamsParser.ParseBand(bandBuf, 0);
+                    if (IsOwnEcho(appCh, b, fp)) return;
                     BandParamNotified?.Invoke(this, new BandParamNotification
                     {
                         Channel = appCh,
@@ -2373,6 +2419,7 @@ public partial class DspDevice : ObservableObject, IDisposable
                     var bandBuf = new byte[BulkParamsParser.WireBandSize];
                     Buffer.BlockCopy(buf, 12, bandBuf, 0, BulkParamsParser.WireBandSize);
                     var fp = BulkParamsParser.ParseBand(bandBuf, 0);
+                    if (IsOwnEcho(appCh, CrossoverFilter.XoverBandBase + local, fp)) return;
                     XoverBandParamNotified?.Invoke(this, new BandParamNotification
                     {
                         Channel = appCh,

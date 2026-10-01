@@ -352,15 +352,17 @@ Most use `TextFillColorSecondaryBrush` - change the brush definition in `App.xam
 
 ---
 
-## On-Graph Filter Editing (BodePlotControl.Editing.cs)
+## On-Graph Filter Editing (Controls/GraphEditing)
 
-Draggable band handles on the Bode plot, gated by Settings → Graphing → Style → "Edit filters on the graph" (`AppSettings.GraphEditingEnabled`, default on) and a selected channel.
+A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/GraphEditing/PeqGraphEditor.cs` (unit-tested in `DSPiConsole.Core.Tests`); `PeqGraphEditorView` hosts it over the plot rect of `BodePlotControl` and draws with Win2D (`PeqGraphRenderer`).
 
-- **PEQ handles**: 16 px circles, channel-color fill (alpha 235), white stroke (alpha 140, hover/selected 230), band number centered (9 px SemiBold, white or near-black by fill luminance)
-- **Crossover handles**: same metrics as a diamond (rotated-square polygon)
-- **Bypassed band**: hollow handle — transparent fill, channel-color stroke 1.8 px, number in channel color
-- **Selection halo**: ring at handle radius + 5 px, channel color alpha 110, 1.5 px
-- **Band-solo curve** (hover/selected): isolated response, 1.25 px stroke channel color alpha 140, fill to baseline alpha 28; dashed (3,3) with no fill when bypassed
-- **Readout chip**: #F0141418 bg, #28FFFFFF 1 px border, 5 px radius, 8/3/8/4 padding, Cascadia Code 11 px #E8E8EB
-- **Empty hint**: "Double-click to add a band", 11 px, #46FFFFFF, bottom-center of plot
-- Overlay canvas is clipped to the plot rect and hit-test-invisible; input is handled on the control's root grid
+- **Band colours**: `PeqBandPalette`, ten soft hues (coral, orange, amber, sage, teal, sky, periwinkle, lavender, rose, clay), shared with the band list's bypass dot and number
+- **Dots**: flat discs, radius 5, 6.5 on hover, +0.5 selected; a selected dot grows a 2.2 px centre in the graph background colour (#262629)
+- **Fills**: every band's lobe at 0.22 opacity (0.42 hovered or selected), fading to nothing at 0 dB column by column; outline 1.25 px at 0.9 when hovered or selected, dissolving within 10 px of 0 dB
+- **Level offset**: with "Gain affects displayed level" on, the curve includes the channel's output gain or input preamp, and the dots, fills, fill baseline and hit areas are drawn on axes shifted by the same amount; chip and list values stay the band's own, and the pointer readout shows the axis level
+- **Rendering**: all the fills are one GPU pass, a Direct2D pixel shader (`Controls/GraphEditing/Shaders/PeqLobes.hlsl`; the compiled `PeqLobes.bin` is embedded, and the .hlsl header gives the fxc command to rebuild it). Each band's response row is recomputed only when that band changes, and the view, chip, readouts and band list follow the editor once per displayed frame, however fast pointer input arrives
+- **Bypassed band**: colour mixed 65 % toward grey, dot at 0.55 opacity, fill 0.06, outline 0.35
+- **Edited channel's curve**: drawn by the editor (the plot skips it), line width and glow from Graphing settings; glow is the curve at 2.5x width, alpha 0.7, Gaussian blur 3.5, composited at 0.85
+- **Chip and card**: 110 px wide, #EB1C1C20 with a 1 px #1AFFFFFF edge, 8 px radius; header 17 px at y 4, rule at y 24, value rows 15 px from y 28; values Cascadia Code 11, labels 9.5 at 45 % white
+- **Readouts**: 16 px labels, #EB17171C, 4 px radius, Cascadia Code 10 semibold, at the bottom edge (frequency) and left edge (gain)
+- **Graph options**: the gear at the graph's top right (`GraphOptionsPanel`), 280 px, a main page and a Graph Setup page

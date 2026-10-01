@@ -51,18 +51,6 @@ public static class PresetFileService
 {
     public const string FileExtension = ".dspipreset";
 
-    private static readonly JsonSerializerOptions WriteOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
-    private static readonly JsonSerializerOptions ReadOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
     // ── Capture ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -235,8 +223,9 @@ public static class PresetFileService
 
         for (int i = 0; i < io.SpdifRxPins.Length; i++)
             io.SpdifRxPins[i] = vm.SpdifRxPinAt(i);
+        io.SpdifRxPin4 = vm.SpdifRxPinAt(3);
         byte spdifMask = 0;
-        for (int i = 1; i < io.SpdifRxPins.Length; i++)
+        for (int i = 1; i < 4; i++)
             if (vm.SpdifInputEnabled(i)) spdifMask |= (byte)(1 << (i - 1));
         io.SpdifEnabledExt = spdifMask;
 
@@ -280,7 +269,7 @@ public static class PresetFileService
     // ── Serialization ────────────────────────────────────────────────────────
 
     public static string Serialize(PresetDocument doc) =>
-        JsonSerializer.Serialize(doc, WriteOptions);
+        JsonSerializer.Serialize(doc, PresetDocumentJson.WriteOptions);
 
     /// <summary>
     /// Parse a document. Throws <see cref="InvalidDataException"/> with a
@@ -292,7 +281,7 @@ public static class PresetFileService
         PresetDocument? doc;
         try
         {
-            doc = JsonSerializer.Deserialize<PresetDocument>(json, ReadOptions);
+            doc = JsonSerializer.Deserialize<PresetDocument>(json, PresetDocumentJson.ReadOptions);
         }
         catch (JsonException ex)
         {
@@ -485,6 +474,13 @@ public static class PresetFileService
         if (fp.Type == FilterType.LinkwitzTransform && !vm.LinkwitzTransformSupported)
         {
             const string note = "Linkwitz Transform bands (not supported by this firmware) were set to Off";
+            if (!report.Skipped.Contains(note)) report.Skipped.Add(note);
+            return new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f);
+        }
+
+        if (!vm.FilterTypeSupported(fp.Type))
+        {
+            const string note = "Filter types this firmware can't represent were set to Off";
             if (!report.Skipped.Contains(note)) report.Skipped.Add(note);
             return new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f);
         }
@@ -731,18 +727,18 @@ public static class PresetFileService
 
         // S/PDIF inputs: each input's pin lands before its enable, so an input
         // being switched on is already pointed at the right GPIO.
-        if (io.SpdifRxPins.Length > 0)
-            Try("S/PDIF RX pin", () => vm.SetSpdifRxPin(io.SpdifRxPins[0]));
+        if (io.SpdifRxPinCount > 0)
+            Try("S/PDIF RX pin", () => vm.SetSpdifRxPin(io.SpdifRxPinAt(0)));
         if (vm.MultiSpdifSupported)
         {
             // A file may carry fewer inputs than the device has (written before
             // the fourth input) or more than it has (written on newer firmware);
             // apply only the overlap and report the rest as rejected.
-            int applied = Math.Min(io.SpdifRxPins.Length, vm.SpdifInputCount);
+            int applied = Math.Min(io.SpdifRxPinCount, vm.SpdifInputCount);
             for (int i = 1; i < applied; i++)
             {
                 int idx = i;
-                Try($"S/PDIF {idx + 1} RX pin", () => vm.SetSpdifRxPin(io.SpdifRxPins[idx], idx));
+                Try($"S/PDIF {idx + 1} RX pin", () => vm.SetSpdifRxPin(io.SpdifRxPinAt(idx), idx));
                 Try($"S/PDIF input {idx + 1}",
                     () => vm.SetSpdifInputEnable(idx, (io.SpdifEnabledExt & (1 << (idx - 1))) != 0));
             }

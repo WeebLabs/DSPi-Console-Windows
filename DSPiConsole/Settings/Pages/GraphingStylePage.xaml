@@ -16,12 +16,6 @@
     -->
     <StackPanel Spacing="4">
 
-        <controls:SettingsCard Header="Edit filters on the graph"
-                                Description="Drag band handles directly on the response graph — drag sets frequency and gain, scroll sets Q, double-click adds a band. Applies to the selected channel.">
-                        <ToggleSwitch x:Name="GraphEditToggle" OnContent="On" OffContent="Off"
-                          Toggled="OnGraphEditToggled"/>
-        </controls:SettingsCard>
-
         <controls:SettingsCard Header="Glow effect"
                                 Description="Soft outer glow on graph lines.">
                         <ToggleSwitch x:Name="GlowToggle" OnContent="On" OffContent="Off"

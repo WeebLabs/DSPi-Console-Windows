@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "name": "Desk",
+    "savedUtc": "2026-07-14T09:31:07.4821563+00:00",
+    "appVersion": "1.1.5.0",
+    "platform": "RP2350",
+    "firmwareVersion": "1.1.5",
+    "wireFormatVersion": 27,
+    "inputChannelCount": 8,
+    "outputChannelCount": 9
+  },
+  "global": {
+    "inputPreampsDb": [-3, -3, 0, 0, 0, 0, 0, 0],
+    "bypass": false,
+    "masterVolumeDb": -20,
+    "userVolumeDb": 0,
+    "inputSource": 1,
+    "lgSoundSyncEnabled": false,
+    "inputPairLinked": [true, false, false, false]
+  },
+  "loudness": {"enabled": true, "refSpl": 80, "intensityPct": 60, "outputMask": 3},
+  "crossfeed": {"enabled": false, "preset": 1, "freqHz": 700, "feedDb": 4.5, "itd": true, "outputPairMask": 1},
+  "leveller": {"enabled": false, "speed": 1, "lookahead": true, "amountPct": 50,
+               "maxGainDb": 15, "gateDb": -96, "detectorMask": 255, "applyMask": 255},
+  "psybass": null,
+  "upmix": null,
+  "channels": [
+    {"channelId": 0, "name": "Master L", "isOutput": false, "delayMs": 0,
+     "gainDb": 0, "muted": false, "enabled": true,
+     "eq": [{"type": 1, "freqHz": 100, "q": 1, "gain": 3, "qp": 0.707, "bypass": false}],
+     "crossover": []},
+    {"channelId": 11, "name": "Input 3", "isOutput": false, "delayMs": 0,
+     "gainDb": 0, "muted": false, "enabled": true, "eq": [], "crossover": []},
+    {"channelId": 10, "name": "PDM", "isOutput": true, "delayMs": 2,
+     "gainDb": -4, "muted": false, "enabled": true, "eq": [],
+     "crossover": [{"type": 34, "freqHz": 80, "q": 0.707, "gain": 0, "qp": 0.707, "bypass": false}]}
+  ],
+  "matrix": [{"input": 0, "output": 8, "enabled": true, "invert": false, "gainDb": -3}],
+  "io": {
+    "outputPins": [6, 7, 8, 9, 10], "outputSlotTypes": [0, 0, 0, 0],
+    "i2sBckPin": 14, "mckEnabled": false, "mckPin": 13, "mckMultiplier": 128,
+    "i2sClockMode": 0, "i2sClockPinMode": 0, "i2sBckPinSlave": 26,
+    "spdifRxPins": [5, 20, 21], "spdifEnabledExt": 1,
+    "i2sRxPins": [4, 16, 17, 18], "i2sInputChannels": 2, "i2sInputRateHz": 48000,
+    "adatEnabled": false, "adatPin": 12, "adatInputEnabled": false,
+    "adatInputPin": 255, "adatInputClockMode": 0, "dacHwMute": null
+  }
+}

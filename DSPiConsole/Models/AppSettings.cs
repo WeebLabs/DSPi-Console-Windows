@@ -11,7 +11,7 @@ public class AppSettings
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "DSPiConsole", "settings.json");
 
-    public bool ShowGraphGlow { get; set; } = false;
+    public bool ShowGraphGlow { get; set; } = true;
     public double GraphLineWidth { get; set; } = 2.0;
     public double GraphAnimationSpeed { get; set; } = 0.2;
     public bool ShowDebugInfo { get; set; }
@@ -19,7 +19,7 @@ public class AppSettings
     // Graph scale
     public double GraphDbRange { get; set; } = 50.0;
     public double GraphDbCenter { get; set; } = 0.0;
-    public double GraphMinFrequency { get; set; } = 20.0;
+    public double GraphMinFrequency { get; set; } = 15.0;
     public double GraphMaxFrequency { get; set; } = 20000.0;
 
     // Grid/label visibility
@@ -29,16 +29,20 @@ public class AppSettings
     public bool ShowDbLabels { get; set; } = true;
     public bool ShowDbUnits { get; set; } = true;
 
+    // Grid line strength: 0 hides the grid, 1 is standard, 2 twice as strong.
+    public double GraphGridOpacity { get; set; } = 0.5;
+
+    // Readouts that follow the pointer over empty graph while editing bands:
+    // frequency along the bottom, level along the left edge.
+    public bool ShowFrequencyReadout { get; set; } = true;
+    public bool ShowGainReadout { get; set; } = true;
+
     // Dotted lines for non-selected channels
     public bool DottedInactiveChannels { get; set; } = true;
 
     // Phase-response overlay (dotted curve on a right-side degree axis).
     public bool ShowPhase { get; set; } = false;
     public bool PhaseUnwrapped { get; set; } = false;
-
-    // On-graph filter editing: draggable PEQ/crossover band handles on the
-    // response graph (FabFilter-style). Off = the graph is display-only.
-    public bool GraphEditingEnabled { get; set; } = true;
 
     // Whether the popout graph follows the selected channel editor page
     public bool PopoutFollowsSelectedChannel { get; set; } = true;

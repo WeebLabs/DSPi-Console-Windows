@@ -20,5 +20,9 @@ public partial class App : Application
     {
         _window = new MainWindow();
         _window.Activate();
+#if DEBUG
+        if (Environment.GetEnvironmentVariable("DSPI_EDITOR_HARNESS") != null)
+            new Debugging.GraphEditorHarness().Activate();
+#endif
     }
 }

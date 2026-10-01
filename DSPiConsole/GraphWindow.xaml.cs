@@ -64,6 +64,26 @@ public sealed partial class GraphWindow : Window
 
     public void SetSelectedChannel(int channelId) => BodePlot.SetSelectedChannel(channelId);
 
+    public void SetEditingSuspended(bool suspended) => BodePlot.SetEditingSuspended(suspended);
+
+    private void OnGraphAreaPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+        GraphOptionsButton.Opacity = 0.6;
+
+    private void OnGraphAreaPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+        GraphOptionsButton.Opacity = 0;
+
+    /// <summary>The pop-out's gear: Graph Setup, with Follow Channel Selection.</summary>
+    private void OnGraphOptionsClick(object sender, RoutedEventArgs e)
+    {
+        var flyout = new Flyout
+        {
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight,
+            FlyoutPresenterStyle = MainWindow.GraphOptionsPresenterStyle(),
+            Content = new Controls.GraphOptionsPanel(inPopOutWindow: true, onPopOut: null),
+        };
+        flyout.ShowAt(GraphOptionsButton);
+    }
+
     public void SetIgnoreVisibility(bool ignore)
     {
         BodePlot.SetIgnoreVisibility(ignore, _viewModel);

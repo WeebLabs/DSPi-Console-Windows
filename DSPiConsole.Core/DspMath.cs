@@ -208,24 +208,94 @@ public static class DspMath
     }
 
     /// <summary>
-    /// |H(e^jw)|² for one normalized biquad (a0 = 1).
-    /// H(z) = (b0 + b1·z⁻¹ + b2·z⁻²) / (1 + a1·z⁻¹ + a2·z⁻²), z = e^jw.
+    /// The biquad sections a band contributes, ignoring its bypass flag: one for
+    /// a PEQ type, a cascade for a crossover, none when it is Off. Lets a caller
+    /// that evaluates the same bands at many frequencies (the graph editor's
+    /// per-column curves) design each band once.
+    /// </summary>
+    public static IReadOnlyList<Coefficients> SectionsFor(FilterParams p, float sampleRate = SampleRate)
+    {
+        if (p.Type == FilterType.Flat) return Array.Empty<Coefficients>();
+        if (p.Type.IsCrossover()) return CrossoverSections(p.Type, p.Frequency, sampleRate);
+        return new[] { CalculateCoefficients(p, sampleRate) };
+    }
+
+    /// <summary>Response of a section cascade at <paramref name="freq"/>, in dB.</summary>
+    public static double CascadeDb(IReadOnlyList<Coefficients> sections, double freq, float sampleRate = SampleRate)
+    {
+        double w = 2.0 * Math.PI * freq / sampleRate;
+        double mag = 1.0;
+        for (int i = 0; i < sections.Count; i++) mag *= BiquadMagSquared(sections[i], w);
+        return 10.0 * Math.Log10(Math.Max(mag, 1e-30));
+    }
+
+    /// <summary>φ = sin²(w/2) at <paramref name="freq"/>: what <see cref="CascadeDbInto"/>
+    /// takes per point, so a caller drawing many curves on the same axis computes
+    /// the trigonometry once.</summary>
+    public static double PhiAt(double freq, float sampleRate = SampleRate)
+    {
+        double s = Math.Sin(Math.PI * freq / sampleRate);
+        return s * s;
+    }
+
+    /// <summary>
+    /// A section cascade's response in dB at every φ in <paramref name="phis"/>
+    /// (see <see cref="PhiAt"/>), written to <paramref name="db"/>. The same
+    /// values as <see cref="CascadeDb"/>, with each section's sums hoisted out of
+    /// the loop.
+    /// </summary>
+    public static void CascadeDbInto(IReadOnlyList<Coefficients> sections, ReadOnlySpan<double> phis, Span<double> db)
+    {
+        int n = Math.Min(phis.Length, db.Length);
+        if (sections.Count == 0)
+        {
+            db[..n].Clear();
+            return;
+        }
+        Span<double> terms = stackalloc double[sections.Count * 6];
+        for (int s = 0; s < sections.Count; s++)
+        {
+            var c = sections[s];
+            double sb = c.B0 + c.B1 + c.B2, sa = 1.0 + c.A1 + c.A2;
+            terms[s * 6 + 0] = sb * sb;
+            terms[s * 6 + 1] = -4.0 * (c.B0 * c.B1 + c.B1 * c.B2 + 4.0 * c.B0 * c.B2);
+            terms[s * 6 + 2] = 16.0 * c.B0 * c.B2;
+            terms[s * 6 + 3] = sa * sa;
+            terms[s * 6 + 4] = -4.0 * (c.A1 + c.A1 * c.A2 + 4.0 * c.A2);
+            terms[s * 6 + 5] = 16.0 * c.A2;
+        }
+        for (int i = 0; i < n; i++)
+        {
+            double phi = phis[i], phi2 = phi * phi, mag = 1.0;
+            for (int s = 0; s < terms.Length; s += 6)
+            {
+                double num = terms[s] + terms[s + 1] * phi + terms[s + 2] * phi2;
+                double den = terms[s + 3] + terms[s + 4] * phi + terms[s + 5] * phi2;
+                if (den > 0.0) mag *= Math.Max(num, 0.0) / den;
+            }
+            db[i] = 10.0 * Math.Log10(Math.Max(mag, 1e-30));
+        }
+    }
+
+    /// <summary>
+    /// |H(e^jw)|² for one normalized biquad (a0 = 1), written in terms of
+    /// φ = sin²(w/2), the form RBJ recommends for plotting. It equals evaluating
+    /// the numerator and denominator at z = e^jw, but without their cancellation:
+    /// the direct form lost the resonance of low, narrow sections (a 10 Hz, Q 20
+    /// bell read 0 dB at its peak once the denominator fell under the cut-off).
+    /// Same formulation as the macOS Console's DSPMath.magnitudeSquared.
     /// </summary>
     private static double BiquadMagSquared(Coefficients c, double w)
     {
-        double cos_w = Math.Cos(w);
-        double cos_2w = Math.Cos(2.0 * w);
-        double sin_w = Math.Sin(w);
-        double sin_2w = Math.Sin(2.0 * w);
-
-        double num_r = c.B0 + c.B1 * cos_w + c.B2 * cos_2w;
-        double num_i = -(c.B1 * sin_w + c.B2 * sin_2w);
-        double den_r = 1.0 + c.A1 * cos_w + c.A2 * cos_2w;
-        double den_i = -(c.A1 * sin_w + c.A2 * sin_2w);
-
-        double num = num_r * num_r + num_i * num_i;
-        double den = den_r * den_r + den_i * den_i;
-        return den > 1e-18 ? num / den : 1.0;
+        double s = Math.Sin(w / 2.0);
+        double phi = s * s;
+        double sb = c.B0 + c.B1 + c.B2, sa = 1.0 + c.A1 + c.A2;
+        double num = sb * sb - 4.0 * (c.B0 * c.B1 + c.B1 * c.B2 + 4.0 * c.B0 * c.B2) * phi
+                     + 16.0 * c.B0 * c.B2 * phi * phi;
+        double den = sa * sa - 4.0 * (c.A1 + c.A1 * c.A2 + 4.0 * c.A2) * phi
+                     + 16.0 * c.A2 * phi * phi;
+        if (den <= 0.0) return 1.0;
+        return Math.Max(num, 0.0) / den;
     }
 
     /// <summary>

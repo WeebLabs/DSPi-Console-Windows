@@ -241,6 +241,7 @@ public sealed partial class MatrixMixerWindow : Window
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"],
                 HorizontalAlignment = HorizontalAlignment.Center,
+                MaxLength = ChannelNameLimit.MaxBytes,
                 Style = (Style)RootGrid.Resources["InlineTextBoxStyle"]
             };
             _headerNameTexts[o] = headerName;

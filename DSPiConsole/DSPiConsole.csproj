@@ -30,12 +30,19 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.0.240109" />
     <PackageReference Include="CommunityToolkit.WinUI.Converters" Version="8.0.240109" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.2.0" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DSPiConsole.Core\DSPiConsole.Core.csproj" />
     <ProjectReference Include="..\DSPiConsole.Usb\DSPiConsole.Usb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The graph editor's lobe shader, compiled from PeqLobes.hlsl (see its header). -->
+    <EmbeddedResource Include="Controls\GraphEditing\Shaders\PeqLobes.bin" LogicalName="DSPiConsole.Controls.GraphEditing.Shaders.PeqLobes.bin" />
+    <None Include="Controls\GraphEditing\Shaders\PeqLobes.hlsl" />
   </ItemGroup>
 
   <ItemGroup>

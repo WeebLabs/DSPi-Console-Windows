@@ -91,7 +91,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly byte[] _i2sRxPinsExt = { 2, 3, 4 };  // pair 1,2,3 pin defaults
 
     // Clip tracking
-    private ushort _clipLatched;
+    private uint _clipLatched;
     private DateTime? _clipTimestamp;
 
     // Preset system state
@@ -305,6 +305,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _linkwitzTransformSupported;
 
+    // First-order low/high pass (FilterType.LowPass1 / HighPass1, the 6 dB/oct
+    // cuts). An enum-only firmware addition that never bumped the wire format;
+    // V27 is ambiguous (bumped on main while the filter branch was in flight),
+    // so V28 is the first version that unambiguously carries them. Matches the
+    // macOS Console's firmwareSupportsFirstOrderPass.
+    [ObservableProperty]
+    private bool _firstOrderPassSupported;
+
+    /// <summary>True when the connected firmware can represent
+    /// <paramref name="type"/>. Paths that write bands the user didn't pick one
+    /// at a time (imports, on-graph shape changes) check this first, since an
+    /// unrecognised type byte is misread by the firmware rather than ignored.
+    /// Bulk sync needs V16+, which already carries notch, all-pass and the
+    /// first-order all-pass/shelves (1.1.4 / V13 / V14).</summary>
+    public bool FilterTypeSupported(FilterType type) => type switch
+    {
+        FilterType.LowPass1 or FilterType.HighPass1 => FirstOrderPassSupported,
+        FilterType.LinkwitzTransform => LinkwitzTransformSupported,
+        _ => !type.IsCrossover() || CrossoverSupported,
+    };
+
     // External DAC hardware mute (firmware V10+). One typed config object as
     // the unit of read/write — avoids parameter-order bugs and lets future
     // fields land via DacHwMuteConfig.With(...) without touching every caller.
@@ -475,7 +496,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void SetChannelName(Channel channel, string name)
     {
-        name = name.Trim();
+        name = ChannelNameLimit.Fit(name.Trim()).TrimEnd();
         if (string.IsNullOrEmpty(name) || name == GetChannelName(channel)) return;
         _channelNames[(int)channel.Id] = name;
         Task.Run(() => _device.SetChannelNameOnDevice((int)channel.Id, name));
@@ -711,8 +732,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (n.Source == ParamSource.HostSet) return;
             _dispatcher.TryEnqueue(() =>
             {
+                // A value the model already holds changes nothing; skip the
+                // rebuild of the graph and the band list it would trigger.
                 if (_channelData.TryGetValue(n.Channel, out var filters)
-                    && n.Band < filters.Count)
+                    && n.Band < filters.Count && !filters[n.Band].Equals(n.Params))
                 {
                     filters[n.Band] = n.Params;
                     FiltersChanged?.Invoke(this, EventArgs.Empty);
@@ -729,7 +752,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _dispatcher.TryEnqueue(() =>
             {
                 if (_xoverData.TryGetValue(n.Channel, out var bands)
-                    && n.Band < bands.Count)
+                    && n.Band < bands.Count && !bands[n.Band].Equals(n.Params))
                 {
                     bands[n.Band] = n.Params;
                     FiltersChanged?.Invoke(this, EventArgs.Empty);
@@ -1809,6 +1832,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (CrossfeedMaskSupported)
                 CrossfeedOutputPairMask = bp.CrossfeedOutputPairMask;
             LinkwitzTransformSupported = bp.FormatVersion >= 22;
+            FirstOrderPassSupported = bp.FormatVersion >= 28;
             SeedPsybassFromBulk(bp);
             SeedUpmixFromBulk(bp);
             SeedAdatInputFromBulk(bp);
@@ -2030,7 +2054,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (status != null)
             {
                 // Clip latching: OR incoming clip flags into latched state
-                ushort newBits = (ushort)(status.ClipFlags & ~_clipLatched);
+                uint newBits = status.ClipFlags & ~_clipLatched;
                 if (newBits != 0)
                 {
                     _clipLatched |= status.ClipFlags;
@@ -2060,7 +2084,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CancelLiveFilterSends();   // this awaited write is authoritative — no stale live write after it
         if (_channelData.TryGetValue(channel, out var filters) && band < filters.Count)
             filters[band] = p;
-        var success = await Task.Run(() => _device.SetFilter(channel, band, p));
+        var success = await Task.Run(() => { lock (_filterWriteGate) return _device.SetFilter(channel, band, p); });
 
         // Mirror to the linked pair partner
         if (IsInputPairLinked(channel))
@@ -2068,7 +2092,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             int other = GetLinkedInputChannel(channel);
             if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
                 otherFilters[band] = p;
-            await Task.Run(() => _device.SetFilter(other, band, p));
+            await Task.Run(() => { lock (_filterWriteGate) _device.SetFilter(other, band, p); });
         }
 
         FiltersChanged?.Invoke(this, EventArgs.Empty);
@@ -2106,156 +2130,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             try
             {
                 await Task.Delay(500, token);
-                _device.SetFilter(channel, band, p);
-                if (IsInputPairLinked(channel))
-                    _device.SetFilter(GetLinkedInputChannel(channel), band, p);
+                lock (_filterWriteGate)
+                {
+                    _device.SetFilter(channel, band, p);
+                    if (IsInputPairLinked(channel))
+                        _device.SetFilter(GetLinkedInputChannel(channel), band, p);
+                }
             }
             catch (TaskCanceledException) { }
         });
-    }
-
-    // ── Interactive (on-graph) filter editing ──
-    // A drag on the graph edit overlay must repaint at pointer rate, but the
-    // USB bus can't take a write per pointer move. Live edits update the local
-    // model + fire events immediately and hand the wire write to the throttled
-    // sender below rather than SetFilterDeferred's 500 ms trailing debounce,
-    // which would send nothing at all until the drag stopped.
-
-    private int _interactiveEditDepth;
-
-    /// <summary>
-    /// True while the graph edit overlay is mid-drag. The overlay brackets a
-    /// drag with Begin/EndInteractiveFilterEdit so the main window can skip
-    /// full band-editor rebuilds on the flood of FiltersChanged events and
-    /// refresh only the row reported by <see cref="InteractiveBandEdited"/>.
-    /// </summary>
-    public bool IsInteractiveFilterEdit => _interactiveEditDepth > 0;
-
-    public void BeginInteractiveFilterEdit() => _interactiveEditDepth++;
-
-    public void EndInteractiveFilterEdit() => _interactiveEditDepth = Math.Max(0, _interactiveEditDepth - 1);
-
-    /// <summary>
-    /// (channelId, bandIndex, isXover) naming the single band a live edit just
-    /// changed. Raised on the caller's (UI) thread right after FiltersChanged.
-    /// bandIndex is the local band index, never the wire band index.
-    /// </summary>
-    public event Action<int, int, bool>? InteractiveBandEdited;
-
-    // Throttled live sender. _livePending holds the LATEST queued write set;
-    // overwriting it mid-drag is intended — a superseded value is already stale
-    // by the time it could reach the wire. The loop task keeps at most one
-    // write chain in flight and spaces chains at least LiveSendIntervalMs
-    // apart. Because it re-reads _livePending after the delay (and only clears
-    // _liveSendRunning under the same lock that publishes pending work), the
-    // last value queued in a drag is always sent rather than dropped.
-    private const int LiveSendIntervalMs = 70;
-    private readonly object _liveSendLock = new();
-    private List<(int Channel, int WireBand, FilterParams Params)>? _livePending;
-    private bool _liveSendRunning;
-
-    private void QueueLiveSend(List<(int Channel, int WireBand, FilterParams Params)> writes)
-    {
-        lock (_liveSendLock)
-        {
-            _livePending = writes;
-            if (_liveSendRunning)
-                return;                 // the running loop will pick this up
-            _liveSendRunning = true;
-        }
-
-        Task.Run(async () =>
-        {
-            while (true)
-            {
-                List<(int Channel, int WireBand, FilterParams Params)> batch;
-                lock (_liveSendLock)
-                {
-                    if (_livePending is null)
-                    {
-                        _liveSendRunning = false;
-                        return;
-                    }
-                    batch = _livePending;
-                    _livePending = null;
-                }
-
-                foreach (var (ch, wireBand, p) in batch)
-                {
-                    // Swallow per-write faults like the deferred paths do: a
-                    // dropped live frame is superseded by the next one anyway.
-                    try { _device.SetFilter(ch, wireBand, p); } catch { }
-                }
-
-                await Task.Delay(LiveSendIntervalMs);
-            }
-        });
-    }
-
-    /// <summary>
-    /// Discard any live value still waiting to be sent. Called at the top of
-    /// the authoritative SetFilter/SetXoverFilter paths so a throttled write
-    /// queued mid-drag can't land after the awaited final write and re-apply a
-    /// stale value.
-    /// </summary>
-    public void CancelLiveFilterSends()
-    {
-        lock (_liveSendLock)
-            _livePending = null;
-    }
-
-    /// <summary>
-    /// <see cref="SetFilterDeferred"/> with a live send cadence: identical local
-    /// update, mirroring and event behaviour, but the USB write is throttled to
-    /// one per <see cref="LiveSendIntervalMs"/> ms instead of debounced, so the
-    /// device tracks the drag. For PEQ the wire band index equals band.
-    /// </summary>
-    public void SetFilterLive(int channel, int band, FilterParams p)
-    {
-        if (_channelData.TryGetValue(channel, out var filters) && band < filters.Count)
-            filters[band] = p;
-
-        // Mirror to the linked pair partner (local state)
-        int other = -1;
-        if (IsInputPairLinked(channel))
-        {
-            other = GetLinkedInputChannel(channel);
-            if (_channelData.TryGetValue(other, out var otherFilters) && band < otherFilters.Count)
-                otherFilters[band] = p;
-        }
-
-        FiltersChanged?.Invoke(this, EventArgs.Empty);
-        CheckDirty();
-        InteractiveBandEdited?.Invoke(channel, band, false);
-
-        // A 500 ms deferred write left over from an earlier wheel-scrub must not
-        // land mid-drag and fight the live sends.
-        _filterDebounceCts?.Cancel();
-
-        var writes = new List<(int, int, FilterParams)> { (channel, band, p) };
-        if (other >= 0)
-            writes.Add((other, band, p));
-        QueueLiveSend(writes);
-    }
-
-    /// <summary>
-    /// Crossover counterpart to <see cref="SetFilterLive"/>: updates the xover
-    /// cache and throttles the USB write to wire band XoverBandBase + localBand.
-    /// No linked-pair mirroring — crossover applies per output driver.
-    /// </summary>
-    public void SetXoverFilterLive(int channel, int localBand, FilterParams p)
-    {
-        if (_xoverData.TryGetValue(channel, out var bands) && localBand < bands.Count)
-            bands[localBand] = p;
-
-        FiltersChanged?.Invoke(this, EventArgs.Empty);
-        CheckDirty();
-        InteractiveBandEdited?.Invoke(channel, localBand, true);
-
-        _filterDebounceCts?.Cancel();
-
-        int wireBand = CrossoverFilter.XoverBandBase + localBand;
-        QueueLiveSend(new List<(int, int, FilterParams)> { (channel, wireBand, p) });
     }
 
     // ── Input-pair linking (Master L/R + IN3/4, IN5/6, IN7/8) ──
@@ -2387,9 +2270,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Longest output delay the firmware's delay line holds, in ms at
+    /// 48 kHz: MAX_DELAY_SAMPLES is 2048 on RP2350 and 1024 on RP2040
+    /// (config.h, since firmware 9ec0ca1). Longer requests are silently capped
+    /// on the device, so the UI caps them first.</summary>
+    public float MaxOutputDelayMs => Platform == "RP2350" ? 42f : 21f;
+
     public void SetDelay(int channel, float ms)
     {
-        ms = MathF.Round(ms, 4);
+        ms = MathF.Round(Math.Clamp(ms, 0f, MaxOutputDelayMs), 4);
         _channelDelays[channel] = ms;
         int outputIndex = GetOutputIndex(channel);
         if (outputIndex >= 0)
@@ -3432,7 +3321,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             bands[localBand] = p;
 
         int wireBand = CrossoverFilter.XoverBandBase + localBand;
-        var success = await Task.Run(() => _device.SetFilter(channel, wireBand, p));
+        var success = await Task.Run(() => { lock (_filterWriteGate) return _device.SetFilter(channel, wireBand, p); });
 
         FiltersChanged?.Invoke(this, EventArgs.Empty);
         CheckDirty();

@@ -6,7 +6,7 @@
     xmlns:settings="using:DSPiConsole.Settings"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls">
 
-    <!-- Five Boolean toggles for graph grid/label visibility. -->
+    <!-- Grid/label visibility, grid strength, and the pointer readouts. -->
     <StackPanel Spacing="4">
 
         <controls:SettingsCard Header="Frequency grid"
@@ -37,6 +37,23 @@
                                 Description="Show the literal &quot;dB&quot; unit string next to dB labels.">
                         <ToggleSwitch x:Name="DbUnitsToggle" OnContent="On" OffContent="Off"
                           Toggled="OnDbUnitsToggled"/>
+        </controls:SettingsCard>
+
+        <controls:SettingsCard x:Name="GridOpacityCard" Header="Grid opacity">
+                        <Slider x:Name="GridOpacitySlider" Minimum="0" Maximum="200" StepFrequency="1"
+                    Width="220" ValueChanged="OnGridOpacityChanged"/>
+        </controls:SettingsCard>
+
+        <controls:SettingsCard Header="Frequency readout"
+                                Description="While editing bands, label the frequency under the pointer along the bottom of the graph.">
+                        <ToggleSwitch x:Name="FreqReadoutToggle" OnContent="On" OffContent="Off"
+                          Toggled="OnFreqReadoutToggled"/>
+        </controls:SettingsCard>
+
+        <controls:SettingsCard Header="Gain readout"
+                                Description="While editing bands, label the level under the pointer along the left edge: the gain a new bell or shelf takes there.">
+                        <ToggleSwitch x:Name="GainReadoutToggle" OnContent="On" OffContent="Off"
+                          Toggled="OnGainReadoutToggled"/>
         </controls:SettingsCard>
     </StackPanel>
 </settings:SettingsModule>

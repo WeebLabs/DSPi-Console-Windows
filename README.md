@@ -112,6 +112,10 @@ respond to the scroll wheel while Ctrl is held, and reset to their default on a 
 continuously, and every change is applied to the device immediately. Click the channel again to return to the
 dashboard.
 
+**Or shape it on the graph.** On a channel page, each band appears as a coloured dot on the response graph.
+Double-click empty graph to add a bell, drag a dot to move it, and scroll over it to change its width. See
+[Editing filters on the graph](#editing-filters-on-the-graph).
+
 **Build a crossover.** On an output channel, switch to the crossover tab. Each output provides four crossover
 bands, each configured by family (Linkwitz-Riley, Butterworth or Bessel), type (low pass or high pass) and slope.
 This is the configuration required to drive an active two-way or three-way system directly from the device's
@@ -168,6 +172,48 @@ Reset** returns the device to its defaults.
   so a partially entered value is never applied to your speakers. The popover reports the resulting DC boost as
   the parameters are edited.
 - Input channels can be linked so that a single edit applies to both halves of a stereo pair.
+
+### Editing filters on the graph
+
+On a channel page you can create and shape the parametric bands directly on the response graph, much like a modern
+plug-in EQ. Every change reaches the device as you make it, the band list below follows along, and the change is
+saved into the channel when you let go.
+
+Each band appears as a dot in its own colour, the same colour as its number and bypass dot in the band list, with a
+soft fill showing what that band contributes. Only the dot takes clicks: a click on a fill behaves as a click on
+empty graph, so a new band can be placed anywhere. Editing is available when a device is connected and the
+channel's curve is visible. It pauses while the crossover tab is open, since crossover bands are edited there, and
+in the pop-out graph when it does not follow the main window's selection. On a linked input pair, every edit is
+copied to the partner channel. With **Gain affects displayed level** on (Settings, Graphing), the curve includes the
+channel's output gain or input preamp, and the dots and fills move with it, so they stay on the curve. Band values are
+always the band's own: a band placed at a point takes the gain that puts its dot there.
+
+- **Adding bands.** Double-click empty graph to add a bell at the pointer's frequency and level. Ctrl-click to open
+  a card of shapes: pick a shape, then its slope where it has two (6 or 12 dB, or 180 or 360 degrees for an all
+  pass). Or press on the curve itself and pull: a new band is drawn out of it, a low shelf near the left edge, a
+  high shelf near the right and a bell elsewhere. New bands take the lowest band that is off; when every band is in
+  use the graph says so.
+- **Selecting.** Click a dot to select it, Ctrl-click to add or remove it, Shift-click to take every band between,
+  in frequency order. Drag across empty graph to select the dots inside a box. Clicking a band's number in the list
+  selects it too, with the same modifiers. Ctrl+A selects every band and Tab steps through them.
+- **Dragging.** Drag a dot to change frequency and gain. A 12 dB cut's height is its resonance (Q); notches, all
+  passes and 6 dB cuts move in frequency only. Several selected bands move together. Hold Shift for fine movement,
+  Alt to lock to one axis, or Ctrl from the start to change Q instead. Pressing Ctrl after a drag has begun scales
+  the selection's gains in proportion rather than moving them by the same number of decibels. Alt-click a dot to
+  bypass it.
+- **Scroll wheel.** Over a dot or its fill, the wheel changes Q and Ctrl-wheel changes gain; Shift gives finer
+  steps. With bands selected, the wheel adjusts the selection. Over the dB labels at the left edge, the wheel zooms
+  the graph's range.
+- **The band chip.** A small card beside the dot shows the band's shape, frequency, gain and width. Drag a value
+  up or down, scroll over it, or double-click it to type. Frequency accepts Hz, kHz ("2k") and note names ("A4",
+  "C#2+13"). Tab moves to the next value. The shape button turns the card to a page of shapes and slopes, and the
+  power button bypasses the band.
+- **Menus and keys.** Right-click a dot for slope, bypass, invert gain and delete; right-click empty graph to select
+  or deselect everything. Delete removes the selected bands, Escape deselects, the left and right arrows move them
+  by a semitone, and up and down change their gain (Alt-up and Alt-down change Q).
+
+The gear at the graph's top right opens its options: **Graph Setup** (scale, grids, the pointer readouts, grid
+opacity, line width, glow and phase) and **Pop Out Graph**.
 
 ### Crossovers
 
@@ -301,7 +347,7 @@ S/PDIF, I2S and ADAT, and the settings window provides a page for each:
 - The statistics window (Ctrl+Shift+T) reports the platform, Firmware version and serial number, the system clock,
   core voltage, sample rate and temperature, PDM and S/PDIF error counters, USB audio ring statistics, and buffer
   fill levels with high and low watermarks that can be reset on demand.
-- A bulk endpoint monitor (Ctrl+Shift+B) decodes the raw control traffic between Console and the device. It is
+- A bulk endpoint monitor (Ctrl+Shift+I) decodes the raw control traffic between Console and the device. It is
   primarily a development aid, but it is also valuable when diagnosing an unusual configuration.
 
 ---
@@ -311,22 +357,21 @@ S/PDIF, I2S and ADAT, and the settings window provides a page for each:
 | Shortcut | Action |
 |----------|--------|
 | Ctrl+I | Import filters |
-| Ctrl+Shift+I | Import preset file |
 | Ctrl+E | Export filters |
-| Ctrl+Shift+E | Export preset file |
 | Ctrl+S | Save preset |
 | Ctrl+Shift+B | Browse AutoEQ profiles |
+| Ctrl+Shift+M | Matrix mixer |
 | Ctrl+Shift+L | Loudness compensation |
-| Ctrl+Shift+C | Crossfeed |
+| Ctrl+Shift+X | Crossfeed |
 | Ctrl+Shift+P | Psychoacoustic bass |
 | Ctrl+Shift+U | Stereo upmixer |
-| Ctrl+Shift+M | Matrix mixer |
+| Ctrl+Shift+V | Volume leveller |
 | Ctrl+Shift+G | Test signal generator |
 | Ctrl+Shift+T | Statistics |
+| Ctrl+Shift+I | Bulk endpoint monitor |
 | Alt+F4 | Exit |
 
-Ctrl+Shift+B is currently assigned to two menu items (the bulk endpoint monitor, in addition to the entry listed
-above); that window is always reachable from the File menu.
+The tool-window letters match DSPi Console for macOS. Preset files are imported and exported from the File menu.
 
 Numeric fields throughout the application share the same conventions: type a value directly, hold Ctrl and scroll
 to adjust it, or right-click to reset it to its default.

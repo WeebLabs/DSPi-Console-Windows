@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Linq;
 using DSPiConsole.Controls;
+using DSPiConsole.Core.GraphEditing;
 using DSPiConsole.Core.Models;
 using DSPiConsole.Models;
 using DSPiConsole.Dialogs;
@@ -75,7 +76,7 @@ public sealed partial class MainWindow : Window
     private int _currentOutputIndex = -1;
 
     // Graph resize state
-    private const double GraphMinHeight = 250;
+    private const double GraphMinHeight = 200;
     private const double GraphMaxHeight = 350;
     private bool _isResizingGraph;
     private double _graphResizeStartY;
@@ -188,14 +189,15 @@ public sealed partial class MainWindow : Window
         {
             BodePlot.Invalidate();
             ScheduleDashboardRefresh();
-            if (_selectedChannel != null && !_isScrollAdjusting && !_isUpdatingGain && !_isUpdatingDelay
-                && !ViewModel.IsInteractiveFilterEdit)
+            if (_selectedChannel != null && !_isScrollAdjusting && !_isUpdatingGain && !_isUpdatingDelay)
                 ShowChannelEditor(_selectedChannel);
         };
-        // On-graph edits fire per pointer move; refresh just the touched row and
-        // leave the full rebuild to the drag's committing SetFilter.
-        ViewModel.InteractiveBandEdited += OnInteractiveBandEdited;
-        BodePlot.EditBandSelected += OnGraphEditBandSelected;
+        // On-graph editing: the band list follows a graph drag through live
+        // values, and shares the graph's selection and hover.
+        ViewModel.GraphBandLive += OnGraphBandLive;
+        ViewModel.PeqSelection.SelectionChanged += OnPeqSelectionChanged;
+        ViewModel.PeqSelection.HoverChanged += UpdatePeqRowHighlights;
+        ViewModel.PeqSelection.RevealRow += RevealPeqRow;
         // Bulk refreshes (preset load, factory reset, BULK_INVALIDATED) fire
         // FiltersChanged too, so the 50ms ScheduleDashboardRefresh debounce
         // would otherwise hold the dashboard back ~50ms while the BodePlot
@@ -510,6 +512,7 @@ public sealed partial class MainWindow : Window
         var nameBox = new TextBox
         {
             Text = ViewModel.GetChannelName(channel),
+            MaxLength = ChannelNameLimit.MaxBytes,
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Collapsed,
             Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"],
@@ -1162,10 +1165,12 @@ public sealed partial class MainWindow : Window
         {
             _filterPageChannelId = (int)channel.Id;
             _filterPageIsXover = false;
+            ViewModel.PeqSelection.Reset();
         }
 
         // Set gradient state before SetSelectedChannel to avoid a redraw without it
         SyncLinkedPairGradient();
+        UpdateGraphEditingSuspension(channel);
 
         BodePlot.SetSelectedChannel((int)channel.Id);
         if (AppSettings.Instance.PopoutFollowsSelectedChannel)
@@ -1620,7 +1625,7 @@ public sealed partial class MainWindow : Window
                 FontFamily = new FontFamily("Cascadia Code, Consolas"),
                 Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
             };
-            delayTextBox.TextChanged += OnDelayTextChanged;
+            delayTextBox.LostFocus += OnDelayTextCommitted;
             delayTextBox.KeyDown += (s, e) =>
             {
                 if (e.Key == Windows.System.VirtualKey.Enter)
@@ -1674,8 +1679,7 @@ public sealed partial class MainWindow : Window
                 if (delta == 0) return;
                 int direction = delta > 0 ? 1 : -1;
                 float current = ViewModel.GetChannelDelay(channel);
-                float maxDelay = ViewModel.Platform == "RP2350" ? 85 : 170;
-                float newVal = Math.Clamp(current + direction, 0, maxDelay);
+                float newVal = Math.Clamp(current + direction, 0, ViewModel.MaxOutputDelayMs);
                 _isUpdatingDelay = true;
                 ViewModel.SetDelay((int)channel.Id, newVal);
                 delayTextBox.Text = newVal.ToString("0.00##", CultureInfo.InvariantCulture);
@@ -1691,7 +1695,7 @@ public sealed partial class MainWindow : Window
 
             delaySlider = new Slider
             {
-                Minimum = 0, Maximum = ViewModel.Platform == "RP2350" ? 85 : 170,
+                Minimum = 0, Maximum = ViewModel.MaxOutputDelayMs,
                 Value = ViewModel.GetChannelDelay(channel),
                 Tag = channel,
                 StepFrequency = 1,
@@ -1918,6 +1922,7 @@ public sealed partial class MainWindow : Window
 
         if (showXover)
         {
+            _peqRows.Clear();
             // No column-header row — matches the PEQ page, which relies on the
             // self-describing controls (family/type/slope dropdowns + "Hz" suffix).
             var xbands = ViewModel.GetXoverFilters(channel);
@@ -1926,9 +1931,12 @@ public sealed partial class MainWindow : Window
         }
         else
         {
+            _peqRows.Clear();
+            _pendingLiveRows.Clear();
             var filters = ViewModel.GetFilters(channel);
             for (int i = 0; i < filters.Count; i++)
                 ChannelEditorPanel.Children.Add(CreateFilterEditorRow(channel, i, filters[i]));
+            UpdatePeqRowHighlights();
         }
 
         // The status bar is pinned (lives outside the ScrollViewer), so it stays
@@ -1938,109 +1946,140 @@ public sealed partial class MainWindow : Window
     }
 
     // ── On-graph editing integration ──
+    // The graph and the band list share PeqSelection: a band selected or hovered
+    // on the graph lights its row, and a row's number selects its band (Ctrl and
+    // Shift as on a dot). During a graph drag the rows show live values without
+    // a rebuild; the model is written once, on release.
 
-    private DateTime _lastInteractiveRowRefresh = DateTime.MinValue;
-    private (int ChannelId, int Band, bool IsXover)? _pendingRowRefresh;
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _rowRefreshTimer;
-
-    /// <summary>
-    /// A live on-graph band edit (drag / wheel on a handle). Replace just that
-    /// band's row so its values track the handle — a full ShowChannelEditor
-    /// rebuild per pointer move would freeze the drag. The authoritative rebuild
-    /// happens when a drag commits through SetFilter with the interactive
-    /// session already ended; wheel edits have no such commit, so a trailing
-    /// timer guarantees the last throttled-out refresh still lands.
-    /// </summary>
-    private void OnInteractiveBandEdited(int channelId, int band, bool isXover)
+    private sealed class PeqRowRefs
     {
-        var now = DateTime.UtcNow;
-        if ((now - _lastInteractiveRowRefresh).TotalMilliseconds < 50)
-        {
-            _pendingRowRefresh = (channelId, band, isXover);
-            if (_rowRefreshTimer == null)
-            {
-                _rowRefreshTimer = DispatcherQueue.CreateTimer();
-                _rowRefreshTimer.Interval = TimeSpan.FromMilliseconds(60);
-                _rowRefreshTimer.IsRepeating = false;
-                _rowRefreshTimer.Tick += (_, _) =>
-                {
-                    if (_pendingRowRefresh is { } pend)
-                    {
-                        _pendingRowRefresh = null;
-                        _lastInteractiveRowRefresh = DateTime.UtcNow;
-                        RefreshInteractiveRow(pend.ChannelId, pend.Band, pend.IsXover);
-                    }
-                };
-            }
-            _rowRefreshTimer.Start();
+        public required Border Row;
+        public TextBox? Freq, Q, Gain;
+        public bool Active;
+    }
+
+    private readonly Dictionary<int, PeqRowRefs> _peqRows = new();
+    private HashSet<int> _previousPeqSelection = new();
+
+    private static readonly Color PeqRowBase = Color.FromArgb(128, 45, 45, 48);
+
+    private static Color BandColor(int band)
+    {
+        var (r, g, b) = PeqBandPalette.Bytes(band);
+        return Color.FromArgb(255, r, g, b);
+    }
+
+    private void OnGraphBandLive(int channelId, int band, FilterParams p)
+    {
+        if (_selectedChannel == null || _filterPageIsXover) return;
+        int sel = (int)_selectedChannel.Id;
+        if (sel != channelId &&
+            !(ViewModel.IsInputPairLinked(channelId) && MainViewModel.GetLinkedInputChannel(channelId) == sel))
             return;
-        }
-        _lastInteractiveRowRefresh = now;
-        _pendingRowRefresh = null;
-        RefreshInteractiveRow(channelId, band, isXover);
+        // A drag reports at pointer rate; the rows take the latest value once a frame.
+        _pendingLiveRows[band] = p;
+        if (_liveRowsQueued) return;
+        _liveRowsQueued = true;
+        CompositionTarget.Rendering += FlushLiveRows;
     }
 
-    private void RefreshInteractiveRow(int channelId, int band, bool isXover)
-    {
-        if (_selectedChannel == null) return;
-        int selId = (int)_selectedChannel.Id;
-        if (selId != channelId)
-        {
-            // The graph edits the selected channel, so a mismatch can only be the
-            // linked pair partner's mirror; anything else isn't on screen.
-            if (!ViewModel.IsInputPairLinked(channelId) ||
-                MainViewModel.GetLinkedInputChannel(channelId) != selId)
-                return;
-        }
-        if (_filterPageIsXover != isXover) return;
-        if (ChannelEditorPanel.Visibility != Visibility.Visible) return;
-        if (band < 0 || band >= ChannelEditorPanel.Children.Count) return;
+    private readonly Dictionary<int, FilterParams> _pendingLiveRows = new();
+    private bool _liveRowsQueued;
 
-        if (isXover)
+    private void FlushLiveRows(object? sender, object e)
+    {
+        CompositionTarget.Rendering -= FlushLiveRows;
+        _liveRowsQueued = false;
+        foreach (var (band, p) in _pendingLiveRows)
         {
-            var xbands = ViewModel.GetXoverFilters(_selectedChannel);
-            if (band >= xbands.Count) return;
-            ChannelEditorPanel.Children[band] = CreateXoverEditorRow(_selectedChannel, band, xbands[band]);
+            if (!_peqRows.TryGetValue(band, out var refs)) continue;
+            SetIfChanged(refs.Freq, FormatFilterValue(p.Frequency, 2));
+            SetIfChanged(refs.Q, FormatFilterValue(p.Q, 3));
+            SetIfChanged(refs.Gain, FormatFilterValue(p.Gain, 2));
         }
-        else
+        _pendingLiveRows.Clear();
+
+        static void SetIfChanged(TextBox? box, string text)
         {
-            var filters = ViewModel.GetFilters(_selectedChannel);
-            if (band >= filters.Count) return;
-            ChannelEditorPanel.Children[band] = CreateFilterEditorRow(_selectedChannel, band, filters[band]);
+            if (box != null && box.Text != text) box.Text = text;
         }
     }
 
-    /// <summary>Selecting a band handle on the graph flips the PEQ|XO filter page
-    /// so the row list below matches the band being edited.</summary>
-    private void OnGraphEditBandSelected(bool isXover)
+    /// <summary>Scrolls the band list just far enough to show a band newly
+    /// selected on the graph (not in the list itself); a row already in view
+    /// does not move.</summary>
+    private void OnPeqSelectionChanged()
     {
-        if (_selectedChannel == null || _filterPageIsXover == isXover) return;
-        if (isXover && !(_selectedChannel.IsOutput && ViewModel.CrossoverSupported)) return;
-        _filterPageIsXover = isXover;
-        var channel = _selectedChannel;
-        // Deferred: the selection lands mid-pointer-event; rebuilding the editor
-        // synchronously inside it risks reentrancy with the drag capture.
-        DispatcherQueue.TryEnqueue(() =>
+        var selected = ViewModel.PeqSelection.Selected;
+        var added = selected.Except(_previousPeqSelection).OrderBy(b => b).ToList();
+        _previousPeqSelection = new HashSet<int>(selected);
+        UpdatePeqRowHighlights();
+        if (ViewModel.PeqSelection.MadeByList is { } byList && byList.SetEquals(selected)) return;
+        if (added.Count > 0) RevealPeqRow(added[0]);
+    }
+
+    private void RevealPeqRow(int band)
+    {
+        if (_peqRows.TryGetValue(band, out var refs))
+            refs.Row.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+    }
+
+    private void UpdatePeqRowHighlights()
+    {
+        var sel = ViewModel.PeqSelection;
+        foreach (var (band, refs) in _peqRows)
         {
-            if (_selectedChannel == channel) ShowChannelEditor(channel);
-        });
+            bool selected = refs.Active && sel.Selected.Contains(band);
+            bool hovered = refs.Active && sel.GraphHovered == band;
+            var c = BandColor(band);
+            double mix = selected ? 0.13 : hovered ? 0.07 : 0;
+            refs.Row.Background = new SolidColorBrush(Blend(PeqRowBase, c, mix));
+            refs.Row.BorderBrush = new SolidColorBrush(selected ? c : Colors.Transparent);
+        }
+    }
+
+    /// <summary><paramref name="baseColor"/> with <paramref name="tint"/> laid
+    /// over it at <paramref name="amount"/>, opaque enough to read as a tint.</summary>
+    private static Color Blend(Color baseColor, Color tint, double amount)
+    {
+        if (amount <= 0) return baseColor;
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + (b - a) * amount);
+        return Color.FromArgb((byte)Math.Max((int)baseColor.A, 150), Mix(baseColor.R, tint.R), Mix(baseColor.G, tint.G), Mix(baseColor.B, tint.B));
+    }
+
+    /// <summary>Graph editing is suspended while the page lists crossover bands.</summary>
+    private void UpdateGraphEditingSuspension(Channel channel)
+    {
+        bool suspended = _filterPageIsXover && channel.IsOutput && ViewModel.CrossoverSupported;
+        BodePlot.SetEditingSuspended(suspended);
+        _graphWindow?.SetEditingSuspended(suspended);
     }
 
     private Border CreateFilterEditorRow(Channel channel, int bandIndex, FilterParams p)
     {
         var row = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(128, 45, 45, 48)),
+            Background = new SolidColorBrush(PeqRowBase),
+            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(2, 0, 0, 0),
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 6, 12, 6),
+            Padding = new Thickness(10, 6, 12, 6),
             Margin = new Thickness(0, 2, 0, 0)
+        };
+        bool bandIsActive = p.Type != FilterType.Flat;
+        var refs = new PeqRowRefs { Row = row, Active = bandIsActive };
+        _peqRows[bandIndex] = refs;
+        row.PointerEntered += (_, _) => { if (bandIsActive) ViewModel.PeqSelection.ListHovered = bandIndex; };
+        row.PointerExited += (_, _) =>
+        {
+            if (ViewModel.PeqSelection.ListHovered == bandIndex) ViewModel.PeqSelection.ListHovered = null;
         };
 
         var grid = new Grid();
         bool bypassSupported = ViewModel.BandBypassSupported;
         if (bypassSupported)
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });    // Bypass toggle
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });  // Band number
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) }); // Type
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) }); // Freq
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) }); // Q
@@ -2054,17 +2093,19 @@ public sealed partial class MainWindow : Window
         // bypass). See band_bypass_spec.md §6.6 for display recommendations.
         if (bypassSupported)
         {
+            // The dot carries the band's graph colour, as on the macOS Console.
             bool bandActive = !p.Bypass && p.Type != FilterType.Flat;
+            var bandColor = BandColor(bandIndex);
             var dot = new Ellipse
             {
                 Width = 12,
                 Height = 12,
                 StrokeThickness = 1.2,
-                Stroke = new SolidColorBrush(bandActive
-                    ? Color.FromArgb(255, 128, 128, 128)
-                    : Color.FromArgb(140, 160, 160, 160)),
+                Stroke = new SolidColorBrush(p.Type == FilterType.Flat
+                    ? Color.FromArgb(140, 160, 160, 160)
+                    : bandColor),
                 Fill = bandActive
-                    ? new SolidColorBrush(Color.FromArgb(255, 128, 128, 128))
+                    ? new SolidColorBrush(bandColor)
                     : new SolidColorBrush(Colors.Transparent)
             };
             var bypassButton = new Button
@@ -2091,18 +2132,36 @@ public sealed partial class MainWindow : Window
             col++;
         }
 
-        // Band label
+        // Band number. Without per-band bypass (whose dot carries the band's
+        // graph colour) the number does. Clicking it selects the band on the
+        // graph: Ctrl toggles, Shift takes the run of rows from the last click.
         var bandLabel = new TextBlock
         {
-            Text = $"Band {bandIndex + 1}",
-            FontSize = 12,
-            FontFamily = new FontFamily("Cascadia Code"),
-            Foreground = new SolidColorBrush(Colors.Gray),
+            Text = $"{bandIndex + 1}",
+            FontSize = 13,
+            Foreground = !bandIsActive || p.Bypass
+                ? (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"]
+                : bypassSupported
+                    ? (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
+                    : new SolidColorBrush(BandColor(bandIndex)),
             VerticalAlignment = VerticalAlignment.Center,
-            Opacity = p.Bypass ? 0.4 : 1.0
         };
-        Grid.SetColumn(bandLabel, col);
-        grid.Children.Add(bandLabel);
+        var bandHit = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
+        bandHit.Children.Add(bandLabel);
+        bandHit.Tapped += (_, _) =>
+        {
+            if (!bandIsActive) return;
+            static bool Down(Windows.System.VirtualKey k) =>
+                Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(k)
+                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+            var filters = ViewModel.GetFilters(channel);
+            ViewModel.PeqSelection.ListClick(bandIndex,
+                ctrl: Down(Windows.System.VirtualKey.Control),
+                shift: Down(Windows.System.VirtualKey.Shift),
+                isActive: i => i < filters.Count && filters[i].Type != FilterType.Flat);
+        };
+        Grid.SetColumn(bandHit, col);
+        grid.Children.Add(bandHit);
         col++;
 
         // Filter type selector — native ComboBox, flat list. PEQ types only; the
@@ -2127,6 +2186,10 @@ public sealed partial class MainWindow : Window
             ("All Pass 6dB", FilterType.AllPass1),
             ("All Pass 12dB", FilterType.AllPass),
         };
+        // 6 dB/oct cuts (V28+): older firmware would misread the type byte.
+        // The band's own current type always stays listed so it can display.
+        if (!ViewModel.FirstOrderPassSupported)
+            typeItems.RemoveAll(t => (t.type is FilterType.LowPass1 or FilterType.HighPass1) && t.type != p.Type);
         // Linkwitz Transform (V22+): output channels only — it's a driver/sealed-box
         // bass-extension tool that only makes sense on outputs feeding speakers.
         if (channel.IsOutput && ViewModel.LinkwitzTransformSupported)
@@ -2164,6 +2227,7 @@ public sealed partial class MainWindow : Window
             if (p.Type != FilterType.Flat)
             {
                 var freqPanel = CreateValueField("Hz", p.Frequency, 58, (channel, bandIndex, "freq"));
+                refs.Freq = (TextBox)freqPanel.Children[0];
                 freqPanel.Opacity = p.Bypass ? 0.4 : 1.0;
                 Grid.SetColumn(freqPanel, col);
                 grid.Children.Add(freqPanel);
@@ -2174,6 +2238,7 @@ public sealed partial class MainWindow : Window
             if (p.Type.HasQ())
             {
                 var qPanel = CreateValueField("Q", p.Q, 44, (channel, bandIndex, "q"), decimals: 3);
+                refs.Q = (TextBox)qPanel.Children[0];
                 qPanel.Opacity = p.Bypass ? 0.4 : 1.0;
                 Grid.SetColumn(qPanel, col);
                 grid.Children.Add(qPanel);
@@ -2184,6 +2249,7 @@ public sealed partial class MainWindow : Window
             if (p.Type.HasGain())
             {
                 var gainPanel = CreateValueField("dB", p.Gain, 40, (channel, bandIndex, "gain"));
+                refs.Gain = (TextBox)gainPanel.Children[0];
                 gainPanel.Opacity = p.Bypass ? 0.4 : 1.0;
                 Grid.SetColumn(gainPanel, col);
                 grid.Children.Add(gainPanel);
@@ -2456,6 +2522,24 @@ public sealed partial class MainWindow : Window
             };
             b.Click += async (_, _) =>
             {
+                // Bypassing a crossover removes the high/low-pass protection and
+                // sends full-range audio to the drivers, which can destroy a
+                // tweeter. Re-enabling is safe, so only bypass asks.
+                if (showXover && bypass)
+                {
+                    var confirm = new ContentDialog
+                    {
+                        Title = "Bypass this output's crossovers?",
+                        Content = "This sends full-range audio to this output with no crossover protection, " +
+                                  "which can damage unprotected drivers such as tweeters. Continue only if you are sure.",
+                        PrimaryButtonText = "Bypass All",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = Content.XamlRoot
+                    };
+                    if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                }
+
                 if (showXover) await ViewModel.SetAllXoverBypass((int)channel.Id, bypass);
                 else await ViewModel.SetAllBandsBypass((int)channel.Id, bypass);
             };
@@ -2827,6 +2911,8 @@ public sealed partial class MainWindow : Window
         ChannelHeaderHost.Visibility = Visibility.Collapsed;
         ChannelHeaderHost.Child = null;
         SyncLinkedPairGradient();
+        _filterPageChannelId = -1;
+        ViewModel.PeqSelection.Reset();
         BodePlot.SetSelectedChannel(-1);
         if (AppSettings.Instance.PopoutFollowsSelectedChannel)
             _graphWindow?.SetSelectedChannel(-1);
@@ -2978,10 +3064,30 @@ public sealed partial class MainWindow : Window
             var item = new MenuFlyoutItem { Text = device.DisplayName };
             if (current != null && device.Serial == current.Serial)
                 item.Icon = new FontIcon { Glyph = "\uE73E" };
-            item.Click += (s, args) =>
+            item.Click += async (s, args) =>
             {
-                if (current == null || device.Serial != current.Serial)
-                    ViewModel.SwitchToDeviceCommand.Execute(device);
+                if (current != null && device.Serial == current.Serial) return;
+
+                // Staged Settings changes describe the current device; applying
+                // them after a switch would write them to the wrong board.
+                var tracker = _settingsWindow?.Tracker;
+                if (ViewModel.IsDeviceConnected && tracker != null && tracker.Count > 0)
+                {
+                    var confirm = new ContentDialog
+                    {
+                        Title = "Unsaved Settings Changes",
+                        Content = "Settings has pending changes for the current device that have not been saved. " +
+                                  "Switching devices will discard them.",
+                        PrimaryButtonText = "Discard and Switch",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = Content.XamlRoot
+                    };
+                    if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                    tracker.DiscardAll();
+                }
+
+                ViewModel.SwitchToDeviceCommand.Execute(device);
             };
             flyout.Items.Add(item);
         }
@@ -3566,23 +3672,23 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnDelayTextChanged(object sender, TextChangedEventArgs e)
+    /// <summary>Applies a typed delay when the field loses focus (Enter moves
+    /// focus away), not per keystroke: typing "12" must not send 1 ms first.
+    /// Unreadable text reverts to the current value.</summary>
+    private void OnDelayTextCommitted(object sender, RoutedEventArgs e)
     {
         if (_isUpdatingDelay) return;
-        if (sender is TextBox textBox && textBox.Tag is Channel channel)
+        if (sender is not TextBox textBox || textBox.Tag is not Channel channel) return;
+
+        _isUpdatingDelay = true;
+        if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
         {
-            if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
-            {
-                _isUpdatingDelay = true;
-                value = Math.Clamp(value, 0, ViewModel.Platform == "RP2350" ? 85 : 170);
-                ViewModel.SetDelay((int)channel.Id, value);
-                if (_currentDelaySlider != null)
-                {
-                    _currentDelaySlider.Value = value;
-                }
-                _isUpdatingDelay = false;
-            }
+            ViewModel.SetDelay((int)channel.Id, value);
+            if (_currentDelaySlider != null)
+                _currentDelaySlider.Value = ViewModel.GetChannelDelay(channel);
         }
+        textBox.Text = ViewModel.GetChannelDelay(channel).ToString("0.00##", CultureInfo.InvariantCulture);
+        _isUpdatingDelay = false;
     }
 
     private string FormatDelayCm(float ms)
@@ -5039,6 +5145,8 @@ public sealed partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void OnLevellerClick(object sender, RoutedEventArgs e) => OpenLevellerWindow();
+
     private void OpenLevellerWindow()
     {
         if (_levellerWindow == null)
@@ -5947,7 +6055,33 @@ public sealed partial class MainWindow : Window
         _popoutFadeTimer.Start();
     }
 
-    private void OnGraphPopoutClick(object sender, RoutedEventArgs e)
+    /// <summary>The gear over the graph: Graph Setup and Pop Out Graph.</summary>
+    private void OnGraphOptionsClick(object sender, RoutedEventArgs e)
+    {
+        var flyout = new Flyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
+        flyout.FlyoutPresenterStyle = GraphOptionsPresenterStyle();
+        flyout.Content = new Controls.GraphOptionsPanel(inPopOutWindow: false, onPopOut: () =>
+        {
+            flyout.Hide();
+            OpenGraphPopout();
+        });
+        flyout.ShowAt(GraphPopoutButton);
+    }
+
+    internal static Style GraphOptionsPresenterStyle()
+    {
+        var style = new Style(typeof(FlyoutPresenter));
+        style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 0.0));
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(FrameworkElement.MaxHeightProperty, 640.0));
+        return style;
+    }
+
+    private void OnGraphReturnClick(object sender, RoutedEventArgs e) => _graphWindow?.Close();
+
+    private double _graphHeightBeforePopout = 250;
+
+    private void OpenGraphPopout()
     {
         if (_graphWindow != null)
         {
@@ -5956,15 +6090,18 @@ public sealed partial class MainWindow : Window
         }
 
         // Animate graph row collapsing
+        _graphHeightBeforePopout = Math.Clamp(GraphRow.Height.Value, GraphMinHeight, GraphMaxHeight);
         GraphGripperControl.Visibility = Visibility.Collapsed;
         AnimateGraphRow(GraphRow.Height.Value, 0, 250, () =>
         {
             GraphArea.Visibility = Visibility.Collapsed;
             GraphRow.Height = GridLength.Auto;
+            if (_graphWindow != null) GraphReturnButton.Visibility = Visibility.Visible;
         });
 
         // Open popout window
         _graphWindow = new GraphWindow(ViewModel);
+        if (_selectedChannel != null) UpdateGraphEditingSuspension(_selectedChannel);
         bool follows = AppSettings.Instance.PopoutFollowsSelectedChannel;
         _graphWindow.SetIgnoreVisibility(!follows);
         if (_selectedChannel != null && follows)
@@ -5972,13 +6109,14 @@ public sealed partial class MainWindow : Window
         _graphWindow.Closed += (_, _) =>
         {
             _graphWindow = null;
+            GraphReturnButton.Visibility = Visibility.Collapsed;
 
             // Restore and animate graph row expanding
             GraphArea.Visibility = Visibility.Visible;
             GraphArea.Opacity = 0;
             GraphRow.Height = new GridLength(0);
 
-            AnimateGraphRow(0, 250, 300, () =>
+            AnimateGraphRow(0, _graphHeightBeforePopout, 300, () =>
             {
                 GraphGripperControl.Visibility = Visibility.Visible;
                 GraphArea.Opacity = 1;

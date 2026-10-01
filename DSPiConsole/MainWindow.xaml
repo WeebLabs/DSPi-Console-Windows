@@ -27,11 +27,7 @@
                 <Button.Flyout>
                     <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="OnMainMenuOpening">
                         <MenuFlyoutSubItem Text="Import">
-                            <MenuFlyoutItem x:Name="ImportPresetMenuItem" Text="Preset File..." Click="OnImportPresetClick">
-                                <MenuFlyoutItem.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control,Shift" Key="I"/>
-                                </MenuFlyoutItem.KeyboardAccelerators>
-                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="ImportPresetMenuItem" Text="Preset File..." Click="OnImportPresetClick"/>
                             <MenuFlyoutItem Text="Filters..." Click="OnImportFiltersClick">
                                 <MenuFlyoutItem.KeyboardAccelerators>
                                     <KeyboardAccelerator Modifiers="Control" Key="I"/>
@@ -39,11 +35,7 @@
                             </MenuFlyoutItem>
                         </MenuFlyoutSubItem>
                         <MenuFlyoutSubItem Text="Export">
-                            <MenuFlyoutItem x:Name="ExportPresetMenuItem" Text="Preset File..." Click="OnExportPresetClick">
-                                <MenuFlyoutItem.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control,Shift" Key="E"/>
-                                </MenuFlyoutItem.KeyboardAccelerators>
-                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="ExportPresetMenuItem" Text="Preset File..." Click="OnExportPresetClick"/>
                             <MenuFlyoutItem Text="Filters..." Click="OnExportFiltersClick">
                                 <MenuFlyoutItem.KeyboardAccelerators>
                                     <KeyboardAccelerator Modifiers="Control" Key="E"/>
@@ -69,7 +61,7 @@
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Crossfeed..." Click="OnCrossfeedClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control,Shift" Key="C"/>
+                                <KeyboardAccelerator Modifiers="Control,Shift" Key="X"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Psychoacoustic Bass..." Click="OnPsybassClick">
@@ -80,6 +72,11 @@
                         <MenuFlyoutItem Text="Stereo Upmixer..." Click="OnUpmixClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="U"/>
+                            </MenuFlyoutItem.KeyboardAccelerators>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Volume Leveller..." Click="OnLevellerClick">
+                            <MenuFlyoutItem.KeyboardAccelerators>
+                                <KeyboardAccelerator Modifiers="Control,Shift" Key="V"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Matrix Mixer..." Click="OnMatrixMixerClick">
@@ -99,7 +96,7 @@
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Bulk Endpoint Monitor..." Click="OnBulkMonitorClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control,Shift" Key="B"/>
+                                <KeyboardAccelerator Modifiers="Control,Shift" Key="I"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Settings..." Click="OnSettingsClick"/>
@@ -513,10 +510,24 @@
                             Margin="0,8,8,0" Padding="6"
                             Background="Transparent" BorderThickness="0"
                             Opacity="0" IsHitTestVisible="False"
-                            Click="OnGraphPopoutClick">
-                        <FontIcon Glyph="&#xE8A7;" FontSize="14"/>
+                            ToolTipService.ToolTip="Graph options"
+                            Click="OnGraphOptionsClick">
+                        <FontIcon Glyph="&#xE713;" FontSize="14"/>
                     </Button>
                 </Grid>
+
+                <!-- While the graph is popped out, a small button in its place
+                     brings it back (as does closing the pop-out window). -->
+                <Button x:Name="GraphReturnButton" Grid.Row="0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Padding="8,4" Visibility="Collapsed"
+                        ToolTipService.ToolTip="Bring the graph back into this window"
+                        Click="OnGraphReturnClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE73F;" FontSize="12"/>
+                        <TextBlock Text="Graph" FontSize="12"/>
+                    </StackPanel>
+                </Button>
 
                 <!-- Graph resize gripper -->
                 <controls:ResizeGripper x:Name="GraphGripperControl" Grid.Row="1" Height="12" Background="Transparent"
