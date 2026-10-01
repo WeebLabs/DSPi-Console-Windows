@@ -368,6 +368,13 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **Readouts**: 16 px labels, #EB17171C, 4 px radius, Cascadia Code 10 semibold, at the bottom edge (frequency) and left edge (gain)
 - **Graph options**: the gear at the graph's top right (`GraphOptionsPanel`), 280 px, a main page and a Graph Setup page
 
+## Spectrum Analyser (Controls/Rta, SpectrumAnalyserWindow.cs)
+
+- **Graph overlay** (`GraphSpectrumOverlay`, Win2D, under the grid and curves, over the plot rect): the analyser floor (-90 dB) at the bottom and ceiling (+6 dB) at the top; per channel a fill in its curve colour from 34 % at the top to 2 % at the bottom, an edge at 55 %, a 4 px blur glow at 35 % when Glow is on, and a peak-hold contour at 35 %, all times the spectrum opacity; the data fades in over 30 px where the transform's lowest band starts. One channel blends the bass bands into the FFT bins over the octave above the bass bank; several draw band curves (Catmull-Rom). Redrawn per device frame, and at 60 fps while smoothing glides
+- **Gear SPECTRUM section**: section label 10 bold secondary with an Inputs | Outputs picker; channel chips in two columns, 24 px, 6 px radius, the curve colour at 22 % fill and 75 % border when on, white 5 % / 8 % when off; a 7 px dot; summary 10 secondary with Clear; FFT Graph switch row
+- **Window**: 760 x 560; 36 px header with the page title (11 semibold), the side (11 secondary) and channel show/hide toggles (6 px dot, 10 pt name, 40 % when hidden), a Curves | Bars | Both picker; body padded 12 on black 20 %; status line in 10 pt Cascadia Code, the running dot #30D158
+- **Bars** (`RtaBandsView`): equal-width bars over the measured bands, gap 18 % of a slot (0.5-2 px), 1.5 px corners, the colour from 95 % at the top to 45 % at the base; peak caps 1.5 px at 90 %; dB lines every 12 dB (0 dB at 35 %, others 12 %) with 8 pt labels; 1-2-5 frequency labels, decades placed first
+
 ## Subharmonic Synthesizer (SubharmonicSynthWindow.cs)
 
 - 900 x 660 window, header (accent icon, title 14 semibold, subtitle 10, SOLO pill #FF9F0A when on, enable switch), two columns of 16 px padding with a 1 px divider

@@ -2,6 +2,17 @@
 
 ## 2026-10-03
 
+### Spectrum analyser
+- The response graph shows a live spectrum behind its curves, in each channel's own colour, on its own dBFS scale: the bass bands where the transform is coarse, the finer FFT detail above them when one channel is selected, with a peak-hold contour
+- The graph's gear has a SPECTRUM section: an Inputs | Outputs switch, the channels as chips, Clear, and an FFT Graph switch. The dashboard remembers its channels; a channel page starts on its own channel
+- A Spectrum Analyser window (Ctrl+Shift+A) mirrors the open page's spectrum as curves, bars or both, with channels hidden in the window only, and a status line with the refresh rate, frames per second and the analyser's main-loop and bass load
+- The analyser runs only while something shows it, and stops on the device when nothing does
+
+### Graphing
+- Inputs beyond the active source's channel count (inputs 3 to 8 on a stereo source) no longer draw on the response graph, where they showed as one multicoloured line with no pill to hide it
+- The graph options open centred below the gear, clear of the graph where the screen allows, on a translucent background; the gear stays shown while they are open
+- The response graph's background is a neutral grey
+
 ### Subharmonic synthesizer and tube modeller
 - A Subharmonic Synthesizer window (Ctrl+Shift+S): the band graph with the synthesized subs, the 70 Hz boost and the ceiling, the band levels, the headroom cost, selectivity, sub ceiling, LF boost, per-output selection with sub meters, pair linking, solo (cleared when the window closes) and four starting points
 - A Tube Modeller window (Ctrl+Shift+D): Basic mode shows the selected tube, glowing while on and brightening with the signal, with a shelf of sixteen tubes, drive and mix; Advanced mode shows the transfer curve with its second and third harmonics, the tube picker, trim, the character controls, the rectifier and the output stage; five starting points; the mode is remembered

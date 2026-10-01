@@ -94,6 +94,11 @@
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="M"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Spectrum Analyser..." Click="OnSpectrumAnalyserClick">
+                            <MenuFlyoutItem.KeyboardAccelerators>
+                                <KeyboardAccelerator Modifiers="Control,Shift" Key="A"/>
+                            </MenuFlyoutItem.KeyboardAccelerators>
+                        </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Test Signal Generator..." Click="OnTestSignalsClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="G"/>

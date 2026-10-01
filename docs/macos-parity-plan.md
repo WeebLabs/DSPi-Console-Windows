@@ -16,7 +16,9 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 | 2 Protocol V32 and versioning | Done 2026-10-02, committed 869778f on `firmware-v32-catchup` |
 | 3.1 ParameterRow, 3.2 Limiter | Done 2026-10-03, committed on `tool-controls`; hardware test pending |
 | 3.3 Subharm window, 3.4 Tube window | Done 2026-10-03, committed on `tool-controls`; hardware test pending |
-| 4-8 | Not started |
+| 4.1 RTA engine, 4.2 window, 4.3 graph overlay, 4.5 gear SPECTRUM section | Done 2026-10-03, committed on `spectrum-analyser`; hardware test pending |
+| 4.4 bar strip, 4.6 Settings page, RTA Bars switch | Not started |
+| 5-8 | Not started |
 
 Notes from doing Phases 0 and 1:
 - **Delay limits:** the firmware's real limits are 42 ms (RP2350) and 21 ms (RP2040). The delay line is 2048 or 1024 samples at 48 kHz, since firmware 9ec0ca1. The macOS Console's 85 ms / 42 ms is stale too.

@@ -16,6 +16,59 @@ public class AppSettings
     /// <summary>The Tube Modeller window shows every control (Advanced) rather
     /// than the tube, drive and mix (Basic).</summary>
     public bool TubeModellerAdvanced { get; set; }
+    // ── Spectrum analyser ──
+    // Names follow the macOS Console's preferences.
+
+    /// <summary>Where the dashboard and the channel pages draw their spectrum:
+    /// in the response graph, in the bar strip under it, or both.</summary>
+    public bool RtaDashboardShowGraph { get; set; } = true;
+    public bool RtaDashboardShowBars { get; set; }
+    public bool RtaChannelShowGraph { get; set; } = true;
+    public bool RtaChannelShowBars { get; set; }
+    /// <summary>The dashboard's channels as an <c>RtaChannelSelection</c>
+    /// storage key ("out:0,1"); empty means never chosen.</summary>
+    public string RtaDashboardSelectionKey { get; set; } = "";
+    /// <summary>The dashboard's selection on the side not showing.</summary>
+    public string RtaDashboardOtherSideKey { get; set; } = "";
+    /// <summary>Channel pages start on their own channel unless the user hid
+    /// the spectrum on one.</summary>
+    public bool RtaChannelPagesShowSpectrum { get; set; } = true;
+    public int RtaBarColumns { get; set; } = 2;
+    public double RtaBarHeight { get; set; } = 96;
+    public double RtaGraphOpacity { get; set; } = 1.0;
+    public double RtaFloorDb { get; set; } = -90;
+    public double RtaCeilingDb { get; set; } = 6;
+    public bool RtaShowPeakHold { get; set; } = true;
+    public bool RtaSmoothingOn { get; set; } = true;
+    /// <summary>The device-side options, kept here because the device never
+    /// stores them.</summary>
+    public int RtaFftOrder { get; set; } = 10;
+    public int RtaAvgMs { get; set; } = 300;
+    public int RtaPeakDecayDbS { get; set; } = 12;
+
+    /// <summary>The interpolation amount the displays use; 0 is off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public double RtaSmoothing => RtaSmoothingOn ? 0.35 : 0;
+
+    public bool RtaShows(bool bars, bool onDashboard) => (bars, onDashboard) switch
+    {
+        (false, true) => RtaDashboardShowGraph,
+        (true, true) => RtaDashboardShowBars,
+        (false, false) => RtaChannelShowGraph,
+        _ => RtaChannelShowBars,
+    };
+
+    public void SetRtaShows(bool bars, bool onDashboard, bool on)
+    {
+        switch (bars, onDashboard)
+        {
+            case (false, true): RtaDashboardShowGraph = on; break;
+            case (true, true): RtaDashboardShowBars = on; break;
+            case (false, false): RtaChannelShowGraph = on; break;
+            default: RtaChannelShowBars = on; break;
+        }
+    }
+
     public double GraphLineWidth { get; set; } = 2.0;
     public double GraphAnimationSpeed { get; set; } = 0.2;
     public bool ShowDebugInfo { get; set; }

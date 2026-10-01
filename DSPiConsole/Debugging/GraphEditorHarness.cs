@@ -46,12 +46,11 @@ public sealed class GraphEditorHarness : Window, IPeqEditorHost
         var root = new StackPanel { Padding = new Thickness(20), Spacing = 12, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 32, 32, 32)) };
         root.Children.Add(card);
         var options = new Button { Content = "Graph options" };
-        options.Click += (_, _) => new Flyout
+        options.Click += (_, _) => Controls.GraphOptionsPlacement.ShowAt(new Flyout
         {
-            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
             FlyoutPresenterStyle = MainWindow.GraphOptionsPresenterStyle(),
             Content = new Controls.GraphOptionsPanel(inPopOutWindow: true, onPopOut: () => Log("pop out")),
-        }.ShowAt(options);
+        }, options, this);
         root.Children.Add(options);
         // The channel's gain or preamp as the graph shows it.
         var offset = new Slider { Header = "Level offset (dB)", Minimum = -20, Maximum = 12, StepFrequency = 0.5, Width = 300, HorizontalAlignment = HorizontalAlignment.Left };

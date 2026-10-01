@@ -57,6 +57,7 @@ public sealed partial class MainWindow : Window
     private PsychoacousticBassWindow? _psybassWindow;
     private SubharmonicSynthWindow? _subharmWindow;
     private TubeModellerWindow? _tubeWindow;
+    private SpectrumAnalyserWindow? _spectrumWindow;
     private UpmixerWindow? _upmixerWindow;
     private VolumeLevellerWindow? _levellerWindow;
     private MatrixMixerWindow? _matrixMixerWindow;
@@ -1180,6 +1181,7 @@ public sealed partial class MainWindow : Window
         BodePlot.SetSelectedChannel((int)channel.Id);
         if (AppSettings.Instance.PopoutFollowsSelectedChannel)
             _graphWindow?.SetSelectedChannel((int)channel.Id);
+        ViewModel.SetRtaPage((int)channel.Id);
 
         DashboardPanel.Visibility = Visibility.Collapsed;
         ChannelEditorPanel.Visibility = Visibility.Visible;
@@ -2954,6 +2956,7 @@ public sealed partial class MainWindow : Window
         BodePlot.SetSelectedChannel(-1);
         if (AppSettings.Instance.PopoutFollowsSelectedChannel)
             _graphWindow?.SetSelectedChannel(-1);
+        ViewModel.SetRtaPage(-1);
         ChannelEditorPanel.Visibility = Visibility.Collapsed;
         DashboardPanel.Visibility = Visibility.Visible;
         InitializeDashboard(); // Refresh
@@ -4988,6 +4991,17 @@ public sealed partial class MainWindow : Window
         _tubeWindow.Activate();
     }
 
+    private void OnSpectrumAnalyserClick(object sender, RoutedEventArgs e)
+    {
+        if (_spectrumWindow == null)
+        {
+            _spectrumWindow = new SpectrumAnalyserWindow(ViewModel);
+            _spectrumWindow.Closed += (s, e) => _spectrumWindow = null;
+        }
+        else _spectrumWindow.StartFromPage();
+        _spectrumWindow.Activate();
+    }
+
     private async void OnUpmixClick(object sender, RoutedEventArgs e)
     {
         // Refresh from the device so a value changed elsewhere (control surface,
@@ -6055,14 +6069,22 @@ public sealed partial class MainWindow : Window
     private DispatcherTimer? _popoutFadeTimer;
     private double _popoutFadeTarget;
 
+    /// <summary>The graph options are open: the gear stays shown, brighter,
+    /// even after the pointer leaves the graph for the panel.</summary>
+    private bool _graphOptionsOpen;
+    private bool _pointerOverGraph;
+
     private void OnGraphAreaPointerEntered(object sender, PointerRoutedEventArgs e)
     {
+        _pointerOverGraph = true;
         GraphPopoutButton.IsHitTestVisible = true;
-        FadePopoutButton(0.6);
+        if (!_graphOptionsOpen) FadePopoutButton(0.6);
     }
 
     private void OnGraphAreaPointerExited(object sender, PointerRoutedEventArgs e)
     {
+        _pointerOverGraph = false;
+        if (_graphOptionsOpen) return;
         GraphPopoutButton.IsHitTestVisible = false;
         FadePopoutButton(0);
     }
@@ -6090,17 +6112,29 @@ public sealed partial class MainWindow : Window
         _popoutFadeTimer.Start();
     }
 
-    /// <summary>The gear over the graph: Graph Setup and Pop Out Graph.</summary>
+    /// <summary>The gear over the graph: the page's spectrum, Graph Setup and
+    /// Pop Out Graph.</summary>
     private void OnGraphOptionsClick(object sender, RoutedEventArgs e)
     {
-        var flyout = new Flyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
+        var flyout = new Flyout();
         flyout.FlyoutPresenterStyle = GraphOptionsPresenterStyle();
         flyout.Content = new Controls.GraphOptionsPanel(inPopOutWindow: false, onPopOut: () =>
         {
             flyout.Hide();
             OpenGraphPopout();
-        });
-        flyout.ShowAt(GraphPopoutButton);
+        }, ViewModel);
+        flyout.Opened += (_, _) =>
+        {
+            _graphOptionsOpen = true;
+            FadePopoutButton(0.95);
+        };
+        flyout.Closed += (_, _) =>
+        {
+            _graphOptionsOpen = false;
+            GraphPopoutButton.IsHitTestVisible = _pointerOverGraph;
+            FadePopoutButton(_pointerOverGraph ? 0.6 : 0);
+        };
+        GraphOptionsPlacement.ShowAt(flyout, GraphPopoutButton, this);
     }
 
     internal static Style GraphOptionsPresenterStyle()
@@ -6109,6 +6143,8 @@ public sealed partial class MainWindow : Window
         style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 0.0));
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
         style.Setters.Add(new Setter(FrameworkElement.MaxHeightProperty, 640.0));
+        // The flyout's acrylic backdrop shows through (GraphOptionsPlacement).
+        style.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Colors.Transparent)));
         return style;
     }
 

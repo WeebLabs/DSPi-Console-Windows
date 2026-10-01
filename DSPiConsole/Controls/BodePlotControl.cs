@@ -280,6 +280,13 @@ public sealed partial class BodePlotControl : UserControl
             StartAnimation();
             RefreshEditor();
         }
+        // Inputs beyond the active source's count stop drawing, and come back
+        // when a wider source is chosen.
+        else if (e.PropertyName == nameof(MainViewModel.ActiveInputChannelCount))
+        {
+            RefreshEditor(redraw: false);
+            Redraw(gridChanged: true);
+        }
         else if (e.PropertyName is nameof(MainViewModel.IsDeviceConnected)
                                 or nameof(MainViewModel.BandBypassSupported)
                                 or nameof(MainViewModel.FirstOrderPassSupported)
@@ -469,15 +476,7 @@ public sealed partial class BodePlotControl : UserControl
         if (_viewModel == null) return false;
         var id = (int)channel.Id;
         if (_ignoreVisibility)
-        {
-            if (!GetLocalVisibility(id)) return false;
-            if (channel.IsOutput)
-            {
-                int outputIndex = _viewModel.GetOutputIndex(id);
-                if (outputIndex < 0 || !_viewModel.IsOutputEnabled(outputIndex)) return false;
-            }
-            return true;
-        }
+            return GetLocalVisibility(id) && _viewModel.IsChannelActive(channel);
         return _viewModel.GetChannelVisibility(channel);
     }
 

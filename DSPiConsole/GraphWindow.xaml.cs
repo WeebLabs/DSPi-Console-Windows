@@ -66,22 +66,42 @@ public sealed partial class GraphWindow : Window
 
     public void SetEditingSuspended(bool suspended) => BodePlot.SetEditingSuspended(suspended);
 
-    private void OnGraphAreaPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
-        GraphOptionsButton.Opacity = 0.6;
+    /// <summary>The graph options are open: the gear stays shown, brighter,
+    /// even after the pointer leaves the graph for the panel.</summary>
+    private bool _graphOptionsOpen;
+    private bool _pointerOverGraph;
 
-    private void OnGraphAreaPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
-        GraphOptionsButton.Opacity = 0;
+    private void OnGraphAreaPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        _pointerOverGraph = true;
+        if (!_graphOptionsOpen) GraphOptionsButton.Opacity = 0.6;
+    }
+
+    private void OnGraphAreaPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        _pointerOverGraph = false;
+        if (!_graphOptionsOpen) GraphOptionsButton.Opacity = 0;
+    }
 
     /// <summary>The pop-out's gear: Graph Setup, with Follow Channel Selection.</summary>
     private void OnGraphOptionsClick(object sender, RoutedEventArgs e)
     {
         var flyout = new Flyout
         {
-            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight,
             FlyoutPresenterStyle = MainWindow.GraphOptionsPresenterStyle(),
-            Content = new Controls.GraphOptionsPanel(inPopOutWindow: true, onPopOut: null),
+            Content = new Controls.GraphOptionsPanel(inPopOutWindow: true, onPopOut: null, _viewModel),
         };
-        flyout.ShowAt(GraphOptionsButton);
+        flyout.Opened += (_, _) =>
+        {
+            _graphOptionsOpen = true;
+            GraphOptionsButton.Opacity = 0.95;
+        };
+        flyout.Closed += (_, _) =>
+        {
+            _graphOptionsOpen = false;
+            GraphOptionsButton.Opacity = _pointerOverGraph ? 0.6 : 0;
+        };
+        Controls.GraphOptionsPlacement.ShowAt(flyout, GraphOptionsButton, this);
     }
 
     public void SetIgnoreVisibility(bool ignore)

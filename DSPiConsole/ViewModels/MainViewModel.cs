@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DSPiConsole.Core;
 using DSPiConsole.Core.Models;
+using DSPiConsole.Core.Rta;
 using DSPiConsole.Services;
 using DSPiConsole.Usb;
 using Microsoft.UI.Dispatching;
@@ -572,6 +573,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _device = new DspDevice();
+        Rta = new RtaEngine(_device);
+        InitializeRta();
 
         // Initialize channel data
         foreach (var channel in Channel.All)
@@ -634,6 +637,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                             FetchPresetInfo();
                             FetchInputSource();
                             FetchBandBypassCapability();
+                            // The analyser's caps read is its whole feature
+                            // gate: it is transient and absent from the bulk
+                            // blob. Firmware without it STALLs the read.
+                            Rta.FetchCaps();
                             // DAC HW mute (V10+) and LG Sound Sync (V8+)
                             // arrive via the bulk packet's WireDacHwMute /
                             // WireLgSoundSync sections — ApplyBulkParams
@@ -662,6 +669,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     else
                     {
                         // Keep Platform so the UI layout stays until a new device connects
+                        Rta.DeviceDisconnected();
                         ResetChannelData();
                         _presetsChecked = false;
                         ActivePreset = -1;
@@ -886,6 +894,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (IsDeviceConnected)
             {
                 FetchStatus();
+                // Analyser frames, only while a view watches. It shares this
+                // poll so all vendor traffic stays in one order.
+                if (Rta.IsWatching) Rta.Tick();
                 PollLimiterMeter();
                 // Re-poll the Windows USB input format ~every 2s so a channel
                 // (alt-mode) change in Sound Settings is picked up without audio.
@@ -1047,13 +1058,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!_channelVisibility.TryGetValue((int)channel.Id, out var v) || !v)
             return false;
+        return IsChannelActive(channel);
+    }
+
+    /// <summary>Whether the channel exists on this device as configured: an
+    /// enabled output, or an input within the active source's channel count.
+    /// Inputs 3-8 have no pill or row beyond that count, so they must not draw
+    /// on the graph either.</summary>
+    public bool IsChannelActive(Channel channel)
+    {
         if (channel.IsOutput)
         {
             int outputIndex = GetOutputIndex((int)channel.Id);
-            if (outputIndex < 0 || !IsOutputEnabled(outputIndex))
-                return false;
+            return outputIndex >= 0 && IsOutputEnabled(outputIndex);
         }
-        return true;
+        int inputIndex = -1;
+        for (int i = 0; i < Channel.AllInputs.Count; i++)
+            if (Channel.AllInputs[i].Id == channel.Id) { inputIndex = i; break; }
+        return inputIndex >= 0 && inputIndex < ActiveInputChannelCount;
     }
 
     public float GetChannelDelay(Channel channel) =>

@@ -17,6 +17,8 @@ namespace DSPiConsole.Controls;
 public sealed partial class BodePlotControl
 {
     private PeqGraphEditorView? _editorView;
+    /// <summary>The live spectrum, under the grid and the curves.</summary>
+    private Rta.GraphSpectrumOverlay? _spectrum;
     private bool _editingSuspended;
     /// <summary>The channel the editor draws, or -1.</summary>
     private int _editedChannelId = -1;
@@ -32,6 +34,8 @@ public sealed partial class BodePlotControl
         if (_editorView != null || _viewModel == null) return;
         _editorView = new PeqGraphEditorView(_viewModel);
         _rootGrid!.Children.Add(_editorView);
+        _spectrum = new Rta.GraphSpectrumOverlay(_viewModel, followsGraphPreference: true);
+        _rootGrid.Children.Insert(0, _spectrum);
         LayoutEditor();
         RefreshEditor(redraw: false);
     }
@@ -51,6 +55,11 @@ public sealed partial class BodePlotControl
     {
         if (_editorView == null) return;
         _editorView.Margin = new Thickness(LeftMargin, TopMargin, RightMargin, BottomMargin);
+        if (_spectrum != null)
+        {
+            _spectrum.Margin = _editorView.Margin;
+            _spectrum.SetAxis(MinFreq, MaxFreq);
+        }
     }
 
     /// <summary>Hands the editor the current channel, bands and axes. With

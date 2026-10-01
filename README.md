@@ -392,6 +392,25 @@ S/PDIF, I2S and ADAT, and the settings window provides a page for each:
   with its recommended preamp adjustment in a single step. Frequently used models can be kept in a favourites
   menu, and the bundled database can be refreshed from within the application.
 
+### Spectrum analyser
+
+With firmware that includes it, the DSPi can analyse the spectrum of any of its channels, on the input side (after
+each input's own EQ) or the output side (exactly what each output plays). The response graph shows it behind the
+filter curves as a soft fill in each channel's own colour, on its own scale from -90 dBFS at the bottom to +6 dBFS
+at the top. Below 200 Hz the reading comes from a bank of third-octave filters; above it, from the FFT. With a single
+channel selected, the graph shows the FFT's finer detail above the bass, and a thin contour traces the peak hold.
+
+The gear at the graph's top right chooses what is shown. Pick Inputs or Outputs, then click the channels to include;
+Clear hides the spectrum, and the FFT Graph switch turns the graph's drawing off without forgetting the channels.
+The dashboard remembers its choice. A channel page starts on its own channel each time it opens.
+
+The Spectrum Analyser window (Ctrl+Shift+A) shows the open page's spectrum at a larger size, as curves, as
+third-octave bars, or both. A click on a channel name in its header hides that channel in the window only. The
+status line reports how often each channel refreshes, the frame rate, and how much of the DSPi's main loop and
+audio time the analyser is using.
+
+The analyser runs only while something on screen shows it, and stops on the device as soon as nothing does.
+
 ### Monitoring and diagnostics
 
 - Peak metering on every channel, with clip indication.
@@ -420,6 +439,7 @@ S/PDIF, I2S and ADAT, and the settings window provides a page for each:
 | Ctrl+Shift+D | Tube modeller |
 | Ctrl+Shift+U | Stereo upmixer |
 | Ctrl+Shift+V | Volume leveller |
+| Ctrl+Shift+A | Spectrum analyser |
 | Ctrl+Shift+G | Test signal generator |
 | Ctrl+Shift+T | Statistics |
 | Ctrl+Shift+I | Bulk endpoint monitor |

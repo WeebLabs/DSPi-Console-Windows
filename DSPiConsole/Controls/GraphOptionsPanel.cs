@@ -1,4 +1,6 @@
+using DSPiConsole.Core.Rta;
 using DSPiConsole.Models;
+using DSPiConsole.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -12,14 +14,16 @@ namespace DSPiConsole.Controls;
 /// over the graph, as on the macOS Console. A main page (Graph Setup, Pop Out
 /// Graph) and a Graph Setup page holding the graph's scale, grids and curve
 /// style: the same preferences as Settings › Graphing, adjustable while
-/// looking at the graph they change. The spectrum display's options join the
-/// main page with the analyser.
+/// looking at the graph they change. With a view model, the main page opens
+/// with the open page's SPECTRUM: which side and channels the analyser shows,
+/// and whether the graph draws it.
 /// </summary>
 public sealed class GraphOptionsPanel : UserControl
 {
     private const double PanelWidth = 280;
     private readonly bool _inPopOutWindow;
     private readonly Action? _onPopOut;
+    private readonly MainViewModel? _vm;
     private readonly Grid _host = new() { Width = PanelWidth };
     private bool _building;
 
@@ -27,10 +31,12 @@ public sealed class GraphOptionsPanel : UserControl
     /// Selection switch, which means nothing in the main window.</param>
     /// <param name="onPopOut">Null in the pop-out window, which has nowhere
     /// further to pop out to.</param>
-    public GraphOptionsPanel(bool inPopOutWindow, Action? onPopOut)
+    /// <param name="vm">Adds the spectrum section; null in the harness.</param>
+    public GraphOptionsPanel(bool inPopOutWindow, Action? onPopOut, MainViewModel? vm = null)
     {
         _inPopOutWindow = inPopOutWindow;
         _onPopOut = onPopOut;
+        _vm = vm;
         Content = _host;
         // The panel takes focus when it swaps pages: a flyout closes when focus
         // leaves it, and swapping removes the button that was just clicked.
@@ -52,10 +58,137 @@ public sealed class GraphOptionsPanel : UserControl
     private void ShowMain()
     {
         var page = new StackPanel { Padding = new Thickness(0, 4, 0, 4) };
+        _building = true;
+        if (_vm != null)
+        {
+            if (_vm.IsDeviceConnected && _vm.Rta.Supported)
+            {
+                page.Children.Add(SpectrumSection(_vm));
+                page.Children.Add(Divider());
+                bool dashboard = _vm.RtaOnDashboard;
+                page.Children.Add(ToggleRow("FFT Graph", S.RtaShows(bars: false, dashboard),
+                    b => { S.SetRtaShows(bars: false, dashboard, b); _vm.RtaPreferencesChanged(); }));
+            }
+            else
+            {
+                page.Children.Add(new TextBlock
+                {
+                    Text = _vm.IsDeviceConnected ? "This firmware has no spectrum analyser." : "Connect a DSPi to show its spectrum.",
+                    FontSize = 11, Padding = new Thickness(12, 8, 12, 8),
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                });
+            }
+            page.Children.Add(Divider());
+        }
         page.Children.Add(ActionRow("", "Graph Setup", chevron: true, ShowSetup));
         if (_onPopOut != null)
             page.Children.Add(ActionRow("", "Pop Out Graph", chevron: false, _onPopOut));
         Swap(page);
+        _building = false;
+    }
+
+    // ── Spectrum ────────────────────────────────────────────────────────────
+
+    /// <summary>Choosing a side keeps inputs and outputs apart: only one side's
+    /// chips are ever shown, and each side keeps its own checked channels.</summary>
+    private FrameworkElement SpectrumSection(MainViewModel vm)
+    {
+        var selection = vm.RtaSelection;
+        var channels = vm.RtaChannels(selection.Tap);
+        var section = new StackPanel { Spacing = 10, Padding = new Thickness(12) };
+
+        var side = new SegmentedPicker(new[] { "Inputs", "Outputs" }, height: 22, fontSize: 11) { Width = 130 };
+        side.Selected = selection.Tap == RtaWire.TapInput ? 0 : 1;
+        side.Picked += i =>
+        {
+            vm.SwitchRtaSide(i == 0 ? RtaWire.TapInput : RtaWire.TapOutput);
+            DispatcherQueue.TryEnqueue(ShowMain);
+        };
+        var title = SectionHeader("SPECTRUM", side);
+        title.Padding = new Thickness(0);
+        section.Children.Add(title);
+
+        if (channels.Count == 0)
+        {
+            section.Children.Add(new TextBlock
+            {
+                Text = selection.Tap == RtaWire.TapInput ? "No active inputs." : "No enabled outputs.",
+                FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+        }
+        else
+        {
+            // Two equal columns, so chips line up whatever the names.
+            var grid = new Grid { ColumnSpacing = 6, RowSpacing = 6 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int i = 0; i < channels.Count; i++)
+            {
+                if (i % 2 == 0) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var chip = Chip(vm, selection.Tap, channels[i], selection.Contains(selection.Tap, channels[i]));
+                Grid.SetRow(chip, i / 2);
+                Grid.SetColumn(chip, i % 2);
+                grid.Children.Add(chip);
+            }
+            section.Children.Add(grid);
+        }
+
+        var footer = new Grid();
+        footer.Children.Add(new TextBlock
+        {
+            Text = selection.Channels.Count switch { 0 => "Spectrum hidden", 1 => "1 channel", var n => $"{n} channels" },
+            FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        });
+        if (!selection.IsEmpty)
+        {
+            var clear = new HyperlinkButton { Content = "Clear", FontSize = 10, Padding = new Thickness(4, 0, 4, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            clear.Click += (_, _) =>
+            {
+                vm.SetRtaSelection(new RtaChannelSelection(selection.Tap, Array.Empty<int>()));
+                DispatcherQueue.TryEnqueue(ShowMain);
+            };
+            footer.Children.Add(clear);
+        }
+        section.Children.Add(footer);
+        return section;
+    }
+
+    private Button Chip(MainViewModel vm, byte tap, int channel, bool on)
+    {
+        var color = vm.RtaChannelColor(tap, channel);
+        string name = vm.RtaChannelName(tap, channel);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
+        {
+            Width = 7, Height = 7, VerticalAlignment = VerticalAlignment.Center,
+            Fill = new SolidColorBrush(Rta.RtaBandsView.With(color, on ? 1 : 0.4)),
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = name, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+            FontWeight = on ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+            Opacity = on ? 1 : 0.7,
+        });
+        var chip = new Button
+        {
+            Content = row,
+            Height = 24, MinHeight = 0,
+            Padding = new Thickness(8, 0, 8, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(on ? Rta.RtaBandsView.With(color, 0.22) : Windows.UI.Color.FromArgb(13, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(on ? Rta.RtaBandsView.With(color, 0.75) : Windows.UI.Color.FromArgb(20, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+        };
+        ToolTipService.SetToolTip(chip, name);
+        chip.Click += (_, _) =>
+        {
+            vm.SetRtaSelection(vm.RtaSelection.Toggling(tap, channel));
+            DispatcherQueue.TryEnqueue(ShowMain);
+        };
+        return chip;
     }
 
     private void ShowSetup()
