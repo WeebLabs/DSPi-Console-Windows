@@ -2032,9 +2032,13 @@ public sealed partial class MainWindow : Window
             bool selected = refs.Active && sel.Selected.Contains(band);
             bool hovered = refs.Active && sel.GraphHovered == band;
             var c = BandColor(band);
-            double mix = selected ? 0.13 : hovered ? 0.07 : 0;
+            // Stronger than the macOS Console's 13 % / 7 %, which barely shows on
+            // these rows. Hover gets a half-strength bar so it reads at a glance,
+            // and selection stays the stronger of the two.
+            double mix = selected ? 0.24 : hovered ? 0.18 : 0;
             refs.Row.Background = new SolidColorBrush(Blend(PeqRowBase, c, mix));
-            refs.Row.BorderBrush = new SolidColorBrush(selected ? c : Colors.Transparent);
+            refs.Row.BorderBrush = new SolidColorBrush(
+                selected ? c : hovered ? Color.FromArgb(140, c.R, c.G, c.B) : Colors.Transparent);
         }
     }
 
