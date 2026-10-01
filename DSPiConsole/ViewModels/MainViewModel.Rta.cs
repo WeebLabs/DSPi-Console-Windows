@@ -182,11 +182,12 @@ public partial class MainViewModel
     {
         if (channelId == _rtaPageChannelId) return;
         _rtaPageChannelId = channelId;
-        if (channelId >= 0 && RtaChannelOf(channelId) is var (tap, channel))
+        if (channelId >= 0)
         {
             _rtaPageOtherSide = null;
-            _rtaPageSelection = new RtaChannelSelection(tap,
-                AppSettings.Instance.RtaChannelPagesShowSpectrum ? new[] { channel } : Array.Empty<int>());
+            _rtaPageSelection = RtaChannelOf(channelId) is var (tap, channel)
+                ? new RtaChannelSelection(tap, AppSettings.Instance.RtaChannelPagesShowSpectrum ? new[] { channel } : Array.Empty<int>())
+                : RtaChannelSelection.None;
         }
         RtaSelectionChanged?.Invoke(this, EventArgs.Empty);
     }

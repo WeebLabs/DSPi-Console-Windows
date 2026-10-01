@@ -40,7 +40,7 @@ public sealed class GraphSpectrumOverlay : UserControl
     private readonly RtaCurveSmoothing _smoothing = new();
     private Plan? _plan;
     private Guid? _token;
-    private bool _loaded, _active = true, _rendering;
+    private bool _loaded, _active = true, _rendering, _disposed;
     private long _drawnVersion = -1;
     private RtaDisplayConfiguration? _configuration;
     private IReadOnlySet<int> _hidden = new HashSet<int>();
@@ -55,26 +55,37 @@ public sealed class GraphSpectrumOverlay : UserControl
         IsHitTestVisible = false;
         Content = _canvas;
         _canvas.Draw += (_, e) => Draw(e.DrawingSession);
-        Loaded += (_, _) =>
-        {
-            _loaded = true;
-            _vm.RtaSelectionChanged += OnInputsChanged;
-            _vm.RtaStateChanged += OnEngineStateChanged;
-            _vm.ActiveOutputsChanged += OnInputsChanged;
-            _vm.PropertyChanged += OnVmPropertyChanged;
-            AppSettings.Instance.SettingsChanged += OnInputsChanged;
-            Rebuild();
-        };
-        Unloaded += (_, _) =>
-        {
-            _loaded = false;
-            _vm.RtaSelectionChanged -= OnInputsChanged;
-            _vm.RtaStateChanged -= OnEngineStateChanged;
-            _vm.ActiveOutputsChanged -= OnInputsChanged;
-            _vm.PropertyChanged -= OnVmPropertyChanged;
-            AppSettings.Instance.SettingsChanged -= OnInputsChanged;
-            Rebuild();
-        };
+        Loaded += (_, _) => Attach();
+        Unloaded += (_, _) => Detach();
+    }
+
+    private void Attach()
+    {
+        if (_loaded || _disposed) return;
+        _loaded = true;
+        _vm.RtaSelectionChanged += OnInputsChanged;
+        _vm.RtaStateChanged += OnEngineStateChanged;
+        _vm.ActiveOutputsChanged += OnInputsChanged;
+        _vm.OutputEnabledChanged += OnOutputEnabledChanged;
+        _vm.PropertyChanged += OnVmPropertyChanged;
+        AppSettings.Instance.SettingsChanged += OnInputsChanged;
+        Rebuild();
+    }
+
+    /// <summary>Unhooks everything and releases the subscription. Unloaded
+    /// is not reliably raised when a window closes, so a closing host calls
+    /// this itself through <see cref="Dispose"/>.</summary>
+    private void Detach()
+    {
+        if (!_loaded) return;
+        _loaded = false;
+        _vm.RtaSelectionChanged -= OnInputsChanged;
+        _vm.RtaStateChanged -= OnEngineStateChanged;
+        _vm.ActiveOutputsChanged -= OnInputsChanged;
+        _vm.OutputEnabledChanged -= OnOutputEnabledChanged;
+        _vm.PropertyChanged -= OnVmPropertyChanged;
+        AppSettings.Instance.SettingsChanged -= OnInputsChanged;
+        Rebuild();
     }
 
     /// <summary>False while the host is not on screen (a closed or minimised
@@ -102,12 +113,22 @@ public sealed class GraphSpectrumOverlay : UserControl
         _canvas.Invalidate();
     }
 
-    /// <summary>Releases the canvas for good; call when the host window closes.</summary>
-    public void Dispose() => _canvas.RemoveFromVisualTree();
+    /// <summary>Releases the subscription and the canvas for good; call when
+    /// the host window closes.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        Detach();
+        _disposed = true;
+        _canvas.RemoveFromVisualTree();
+    }
 
     // ── What to ask the device for ──
 
     private void OnInputsChanged(object? sender, EventArgs e) => Rebuild();
+
+    /// <summary>A disabled output leaves the selection and the rotation.</summary>
+    private void OnOutputEnabledChanged(int output, bool enabled) => DispatcherQueue.TryEnqueue(Rebuild);
 
     private void OnEngineStateChanged(object? sender, EventArgs e)
     {
@@ -118,7 +139,7 @@ public sealed class GraphSpectrumOverlay : UserControl
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MainViewModel.IsDeviceConnected) or nameof(MainViewModel.ActiveInputSource)
-            or nameof(MainViewModel.UsbInputChannelCount))
+            or nameof(MainViewModel.UsbInputChannelCount) or nameof(MainViewModel.ActiveInputChannelCount))
             DispatcherQueue.TryEnqueue(Rebuild);
     }
 
@@ -126,7 +147,7 @@ public sealed class GraphSpectrumOverlay : UserControl
     /// updates or releases to match it.</summary>
     private void Rebuild()
     {
-        _plan = BuildPlan();
+        _plan = _disposed ? null : BuildPlan();
         bool watch = _loaded && _active && _plan != null;
         if (watch)
         {

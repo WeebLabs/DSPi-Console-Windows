@@ -34,9 +34,12 @@ public sealed record RtaSnapshot
 }
 
 /// <summary>The frame-derived state that decides a display's layout rather than
-/// what it shows; it changes with the configuration or the rate, not per frame.</summary>
-public readonly record struct RtaDisplayState(byte Tap, uint SampleRateHz, int FirstResolvedBand, int BandCount)
+/// what it shows; it changes with the configuration or the rate, not per frame.
+/// A reference type, so a reader on another thread never sees half of one.</summary>
+public sealed record RtaDisplayState(byte Tap, uint SampleRateHz, int FirstResolvedBand, int BandCount)
 {
+    public static RtaDisplayState Initial { get; } = new(RtaWire.TapOutput, 0, 0, 0);
+
     public static RtaDisplayState From(RtaSnapshot s) =>
         new(s.Tap, s.Status.SampleRateHz, s.Status.FirstResolvedBand, s.BandCount);
 }
@@ -85,6 +88,9 @@ public sealed class RtaEngine
     private readonly RtaBinAverage _binAverage = new();
     private int _ticking;
     private int _generation;
+    /// <summary>Serialises the caps probe's results against a disconnect, so a
+    /// probe that finishes as the device goes cannot mark it supported.</summary>
+    private readonly object _capsLock = new();
 
     private volatile RtaSnapshot _snapshot = RtaSnapshot.Empty;
     private long _frameVersion;
@@ -109,7 +115,7 @@ public sealed class RtaEngine
     /// <summary>Set when the device has refused the configuration three times;
     /// views show the reason rather than an empty graph.</summary>
     public bool ConfigRejected { get; private set; }
-    public RtaDisplayState Display { get; private set; }
+    public RtaDisplayState Display { get; private set; } = RtaDisplayState.Initial;
 
     /// <summary>The latest frames, bins and status.</summary>
     public RtaSnapshot Snapshot => _snapshot;
@@ -156,9 +162,12 @@ public sealed class RtaEngine
         }
         if (!empty) return;
         // Nobody is watching. The device would stop itself in five seconds;
-        // stopping it now hands the CPU back at once.
-        Task.Run(() =>
+        // stopping it now hands the CPU back at once. A short grace lets a
+        // view that is being rebuilt subscribe again first, since a STOP
+        // would clear the device's averaging and blink the picture.
+        Task.Run(async () =>
         {
+            await Task.Delay(300);
             if (IsWatching) return;
             _transport.RtaIn(RtaWire.Control, RtaWire.CtlStop, 1);
             // A view can come back before STOP completes; never clear data
@@ -224,9 +233,12 @@ public sealed class RtaEngine
         var caps = RtaCaps.Parse(_transport.RtaIn(RtaWire.GetCaps, 0, RtaWire.CapsSize));
         if (caps == null)
         {
-            if (generation != Volatile.Read(ref _generation)) return;
-            Supported = false;
-            BandCentresHz = Array.Empty<double>();
+            lock (_capsLock)
+            {
+                if (generation != _generation) return;
+                Supported = false;
+                BandCentresHz = Array.Empty<double>();
+            }
             StateChanged?.Invoke();
             return;
         }
@@ -242,28 +254,34 @@ public sealed class RtaEngine
             for (int i = 0; i + 1 < c.Length; i += 2) centres.Add(c[i] | (c[i + 1] << 8));
             if (c.Length < RtaWire.CentresPerChunk * 2) break;
         }
-        if (generation != Volatile.Read(ref _generation)) return;
-
-        Caps = caps;
-        BandCentresHz = centres.Take(caps.MaxBands).ToArray();
-        Supported = centres.Count >= caps.MaxBands;
-        // A size outside this device's range would be STALLed on every push.
-        var o = Options;
-        if (o.FftOrder < caps.FftOrderMin || o.FftOrder > caps.FftOrderMax)
-            o = o with { FftOrder = caps.FftOrderDefault };
+        lock (_capsLock)
+        {
+            if (generation != _generation) return;
+            Caps = caps;
+            BandCentresHz = centres.Take(caps.MaxBands).ToArray();
+            // A size outside this device's range would be STALLed on every push.
+            var o = Options;
+            if (o.FftOrder < caps.FftOrderMin || o.FftOrder > caps.FftOrderMax)
+                o = o with { FftOrder = caps.FftOrderDefault };
+            SetOptions(o);
+            // A fresh device knows nothing of the previous one's configuration.
+            ConfigurationChanged();
+            // Last, so no tick runs on the previous device's state.
+            Supported = centres.Count >= caps.MaxBands;
+        }
         Interlocked.Increment(ref _frameVersion);
         StateChanged?.Invoke();
-        SetOptions(o);
-        // A fresh device knows nothing of the previous one's configuration.
-        ConfigurationChanged();
     }
 
     /// <summary>Forget everything about the device that went away.</summary>
     public void DeviceDisconnected()
     {
-        Interlocked.Increment(ref _generation);
+        lock (_capsLock)
+        {
+            _generation++;
+            Supported = false;
+        }
         lock (_lock) ResetPush();
-        Supported = false;
         ConfigRejected = false;
         lock (_publishLock)
         {
@@ -294,6 +312,7 @@ public sealed class RtaEngine
         RtaConfig want;
         bool needsPush = false, wantsBins, readBins, readStatus;
         int bandSlots, bandFrameSize, binFrameLength;
+        int generation = Volatile.Read(ref _generation);
         double now = _clock();
         lock (_lock)
         {
@@ -389,10 +408,17 @@ public sealed class RtaEngine
 
         lock (_publishLock)
         {
-            // Released while this tick was reading: leave the cleared state.
-            if (!IsWatching) return;
+            // Released, or the device gone, while this tick was reading: leave
+            // the cleared state rather than restore what was read.
+            if (!IsWatching || generation != Volatile.Read(ref _generation)) return;
             var s = _snapshot;
             var merged = s.Tap == want.Tap ? new Dictionary<byte, RtaBandFrame>(s.Frames) : new Dictionary<byte, RtaBandFrame>();
+            // Only channels still asked for and, while the device runs, live:
+            // a channel dropped from the rotation (an output disabled) stops
+            // being reported, and its last frame would otherwise stay frozen.
+            var current = status ?? s.Status;
+            int keep = want.ChannelMask & (current.IsRunning && current.LiveMask != 0 ? current.LiveMask : 0xFFFF);
+            foreach (var ch in merged.Keys.Where(c => c >= 16 || (keep & (1 << c)) == 0).ToArray()) merged.Remove(ch);
             var held = s.Tap == want.Tap ? s.Bins : null;
             var (fresh, stale) = RtaMath.SilencingStale(frames, StaleAfterMs(s.Status));
             foreach (var (ch, f) in fresh) merged[ch] = f;

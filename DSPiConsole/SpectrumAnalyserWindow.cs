@@ -92,6 +92,7 @@ public sealed class SpectrumAnalyserWindow : Window
         _modePicker.Picked += i =>
         {
             _mode = (Mode)i;
+            _modePicker.Selected = i;
             Rebuild(force: true);
         };
 
@@ -99,6 +100,7 @@ public sealed class SpectrumAnalyserWindow : Window
         _vm.RtaStateChanged += OnChanged;
         _vm.RtaTelemetryChanged += OnTelemetry;
         _vm.ActiveOutputsChanged += OnChanged;
+        _vm.OutputEnabledChanged += OnOutputEnabledChanged;
         _vm.PropertyChanged += OnVmPropertyChanged;
         AppSettings.Instance.SettingsChanged += OnChanged;
         VisibilityChanged += (_, e) => { _visible = e.Visible; ActiveChanged(); };
@@ -114,15 +116,16 @@ public sealed class SpectrumAnalyserWindow : Window
             _vm.RtaStateChanged -= OnChanged;
             _vm.RtaTelemetryChanged -= OnTelemetry;
             _vm.ActiveOutputsChanged -= OnChanged;
+            _vm.OutputEnabledChanged -= OnOutputEnabledChanged;
             _vm.PropertyChanged -= OnVmPropertyChanged;
             AppSettings.Instance.SettingsChanged -= OnChanged;
             _visible = false;
+            ActiveChanged();
             ReleaseBars();
             DisposeBody();
         };
 
         StartFromPage();
-        Rebuild(force: true);
     }
 
     private static void AddRow(Grid grid, FrameworkElement e, int row)
@@ -156,10 +159,13 @@ public sealed class SpectrumAnalyserWindow : Window
 
     private void OnTelemetry(object? sender, EventArgs e) => RefreshStatus();
 
+    private void OnOutputEnabledChanged(int output, bool enabled) => DispatcherQueue.TryEnqueue(() => Rebuild(force: false));
+
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MainViewModel.IsDeviceConnected) or nameof(MainViewModel.ActiveInputSource)
-            or nameof(MainViewModel.UsbInputChannelCount) or nameof(MainViewModel.Platform))
+            or nameof(MainViewModel.UsbInputChannelCount) or nameof(MainViewModel.ActiveInputChannelCount)
+            or nameof(MainViewModel.Platform))
             DispatcherQueue.TryEnqueue(() => Rebuild(force: false));
     }
 

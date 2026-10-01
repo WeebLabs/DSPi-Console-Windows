@@ -67,7 +67,7 @@ public sealed class GraphOptionsPanel : UserControl
                 page.Children.Add(Divider());
                 bool dashboard = _vm.RtaOnDashboard;
                 page.Children.Add(ToggleRow("FFT Graph", S.RtaShows(bars: false, dashboard),
-                    b => { S.SetRtaShows(bars: false, dashboard, b); _vm.RtaPreferencesChanged(); }));
+                    b => S.SetRtaShows(bars: false, dashboard, b)));
             }
             else
             {

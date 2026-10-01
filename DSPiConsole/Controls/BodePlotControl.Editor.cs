@@ -40,6 +40,10 @@ public sealed partial class BodePlotControl
         RefreshEditor(redraw: false);
     }
 
+    /// <summary>Releases the spectrum's subscription for good. The pop-out
+    /// calls it on close, since Unloaded is not reliably raised then.</summary>
+    public void ReleaseSpectrum() => _spectrum?.Dispose();
+
     /// <summary>Suspends graph editing while the page below lists something
     /// other than PEQ bands (the XO tab).</summary>
     public void SetEditingSuspended(bool suspended)

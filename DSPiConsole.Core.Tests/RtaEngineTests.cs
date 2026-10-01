@@ -16,7 +16,7 @@ public class RtaEngineTests
         public bool RefuseConfig;
         public bool Stall;
         public byte[]? Bins = BinFrameBytes(nBins: 512, channel: 0);
-        public byte[] Status = StatusBytes(liveCount: 1, firstBand: 0, fps: 46);
+        public byte[] Status = LiveStatus(0xFFFF);
         public Func<byte, byte[]>? Bands;
 
         public byte[]? RtaIn(byte request, ushort value, int length)
@@ -29,7 +29,8 @@ public class RtaEngineTests
                 RtaWire.GetCaps => Centres(value, length),
                 RtaWire.GetBands => Band((byte)value),
                 RtaWire.GetBandsAll => Pushed.Count == 0 ? null
-                    : Enumerable.Range(0, 16).Where(c => (Pushed[^1].ChannelMask & (1 << c)) != 0)
+                    // Like the firmware: only channels selected and live.
+                    : Enumerable.Range(0, 16).Where(c => (Pushed[^1].ChannelMask & (Status[6] | Status[7] << 8) & (1 << c)) != 0)
                         .SelectMany(c => Band((byte)c)).ToArray(),
                 RtaWire.GetBins => Bins == null ? null : Bins.Skip(value).Take(length).ToArray(),
                 RtaWire.GetStatus => Status,
@@ -46,6 +47,14 @@ public class RtaEngineTests
             lock (Reads) Pushed.Add(cfg);
             if (!RefuseConfig) Applied = cfg;
             return !RefuseConfig;
+        }
+
+        internal static byte[] LiveStatus(ushort liveMask)
+        {
+            var b = StatusBytes(liveCount: 1, firstBand: 0, fps: 46);
+            b[6] = (byte)liveMask;
+            b[7] = (byte)(liveMask >> 8);
+            return b;
         }
 
         private byte[] Band(byte channel) => Bands?.Invoke(channel) ?? BandFrameBytes(channel: channel, ageMs: 10);
@@ -278,6 +287,31 @@ public class RtaEngineTests
         Advance(0.06);
         engine.Tick();
         Assert.True(engine.FrameVersion > v);
+    }
+
+    [Fact]
+    public void AChannelNoLongerAskedForOrLiveIsDropped()
+    {
+        var (engine, device) = Make();
+        var id = engine.Subscribe(new RtaRequest(RtaWire.TapOutput, 0b11));
+        engine.Tick();
+        Assert.Equal(new byte[] { 0, 1 }, engine.Snapshot.Frames.Keys.OrderBy(k => k));
+
+        // Deselected: its last frame does not stay on screen.
+        engine.Update(id, new RtaRequest(RtaWire.TapOutput, 0b111));
+        Advance(0.06);
+        engine.Tick();
+        engine.Update(id, new RtaRequest(RtaWire.TapOutput, 0b101));
+        Advance(0.06);
+        engine.Tick();
+        Assert.DoesNotContain((byte)1, engine.Snapshot.Frames.Keys);
+
+        // Selected but no longer live on the device (an output disabled): the
+        // device stops reporting it, and the engine stops drawing it.
+        device.Status = FakeDevice.LiveStatus(0b001);
+        Advance(0.6);
+        engine.Tick();
+        Assert.Equal(new byte[] { 0 }, engine.Snapshot.Frames.Keys);
     }
 
     [Fact]

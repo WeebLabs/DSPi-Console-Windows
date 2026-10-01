@@ -27,6 +27,7 @@ public sealed partial class GraphWindow : Window
         _viewModel = viewModel;
         BodePlot.DataContext = _viewModel;
         BodePlot.SetIsPopout(true);
+        Closed += (_, _) => BodePlot.ReleaseSpectrum();
 
         var hWnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
