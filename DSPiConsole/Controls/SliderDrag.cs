@@ -83,8 +83,12 @@ public sealed class SliderDrag
     {
         if (!_dragging) return;
         _dragging = false;
-        // The commit is the last write; drop any live value still waiting.
-        _delivery.Cancel();
-        _commit(Snap((float)_slider.Value));
+        // The release value goes to the device now, replacing any live value
+        // still waiting. The commit may send nothing: a model setter skips a
+        // value equal to the one it holds, which is what a drag that ends
+        // where it began commits, and the device would keep the last live one.
+        float final = Snap((float)_slider.Value);
+        if (_hasLive) _delivery.Finish(final); else _delivery.Cancel();
+        _commit(final);
     }
 }

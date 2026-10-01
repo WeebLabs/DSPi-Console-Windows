@@ -2,6 +2,14 @@
 
 ## 2026-10-03
 
+### Loudness, crossfeed, volume leveller and psychoacoustic bass
+- The four windows follow the macOS Console's layout: a header with the switch, and (apart from the leveller) two columns, the graph beside the parameters; every value is a slider with a typed field that sends as you drag and records once on release
+- Loudness: the curve is the compensation at -40 dB of volume (it was drawn 40 dB too low, at a different level), on a 20 Hz-20 kHz axis fitted to the curve, reading Disabled when off; the mask preset is "Slot 1 only (Headphones)"
+- Crossfeed: the response is the firmware's actual filter; choosing Default, Chu Moy or Jan Meier no longer overwrites your Custom cutoff and feed, and editing either while a built-in preset runs switches to Custom from the values shown; legend, Disabled state and preset descriptions; "Pair 1 only (Headphones)"
+- Volume leveller: the channel chips follow the active input count and name the right channels; the Lookahead note reads 5 ms; the mask presets use the Mac's names and order
+- Every slider in the tool windows: a drag released where it began leaves the device on that value, not on the last value sent mid-drag; a value field that still has focus no longer undoes a change made elsewhere (a preset load) when you click away; the graphs follow a drag without snapping back; switches, masks and presets reach the device in the order they were made
+- Psychoacoustic bass: a SPECTRUM diagram of the original band and the harmonics from fc to 4fc; the Apply preset values match the macOS Console's; Warm / Aggressive ends on Character
+
 ### Spectrum analyser
 - The response graph shows a live spectrum behind its curves, in each channel's own colour, on its own dBFS scale: the bass bands where the transform is coarse, the finer FFT detail above them when one channel is selected, with a peak-hold contour
 - The graph's gear has a SPECTRUM section: an Inputs | Outputs switch, the channels as chips, Clear, and FFT Graph and RTA Bars switches. The dashboard remembers its channels; a channel page starts on its own channel

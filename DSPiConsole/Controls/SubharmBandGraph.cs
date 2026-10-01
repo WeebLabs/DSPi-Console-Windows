@@ -49,11 +49,12 @@ public sealed class SubharmBandGraph : UserControl
         Unloaded += (_, _) => _canvas.RemoveFromVisualTree();
     }
 
-    /// <summary>The committed values; clears any live overrides.</summary>
+    /// <summary>The committed values. Live overrides are dropped only when
+    /// these change, so an unrelated refresh mid-drag does not snap back.</summary>
     public void SetValues(float low, float high, float top, float boost, float ceiling, bool enabled)
     {
+        if ((low, high, top, boost, ceiling) != (_low, _high, _top, _boost, _ceiling)) _live.Clear();
         (_low, _high, _top, _boost, _ceiling, _effectEnabled) = (low, high, top, boost, ceiling, enabled);
-        _live.Clear();
         _canvas.Invalidate();
     }
 

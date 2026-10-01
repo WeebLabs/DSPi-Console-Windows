@@ -68,7 +68,7 @@ public sealed class ParameterRow : UserControl
 
         _slider = new Slider { Minimum = min, Maximum = max, StepFrequency = 0.01, Margin = new Thickness(0, -4, 0, -4) };
         _drag = new SliderDrag(_slider, live, v => Commit(v), v => (float)Math.Round(v, MaxDecimals));
-        _drag.Moved += v => _field.Text = Format(v, live: _drag.IsDragging);
+        _drag.Moved += v => ShowText(Format(v, live: _drag.IsDragging));
 
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
         titles.Children.Add(_title);
@@ -148,7 +148,7 @@ public sealed class ParameterRow : UserControl
             _drag.Show(value);
             // Text being typed into the field is not overwritten by an echo.
             if (_field.FocusState == FocusState.Unfocused)
-                _field.Text = Format(value, live: false);
+                ShowText(Format(value, live: false));
         }
     }
 
@@ -157,7 +157,7 @@ public sealed class ParameterRow : UserControl
         v = (float)Math.Clamp(Math.Round(v, MaxDecimals), _min, _max);
         _value = v;
         _set(v);
-        _field.Text = Format(v, live: false);
+        ShowText(Format(v, live: false));
     }
 
     private string Format(float v, bool live)
@@ -169,19 +169,35 @@ public sealed class ParameterRow : UserControl
         return s == "-0" ? "0" : s;
     }
 
+    /// <summary>The text this row last put in the field. A field left as it
+    /// was shown has nothing to commit, even if the value changed underneath
+    /// it while it had focus (a preset loaded elsewhere, say).</summary>
+    private string _shownText = "";
+
+    private void ShowText(string text)
+    {
+        _shownText = text;
+        _field.Text = text;
+    }
+
     private void CommitField()
     {
+        if (_field.Text == _shownText)
+        {
+            ShowText(Format(_value, live: false));
+            return;
+        }
         var text = _field.Text.Trim();
         if (DisplayOverride?.Invoke(_value) is { } shown && string.Equals(text, shown, StringComparison.OrdinalIgnoreCase))
             return;
         if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float typed))
         {
             if (Math.Abs(typed - _value) > 1e-6f) Commit(typed);
-            else _field.Text = Format(_value, live: false);
+            else ShowText(Format(_value, live: false));
         }
         else
         {
-            _field.Text = Format(_value, live: false);
+            ShowText(Format(_value, live: false));
         }
     }
 
@@ -196,7 +212,7 @@ public sealed class ParameterRow : UserControl
         else if (e.Key == VirtualKey.Escape)
         {
             e.Handled = true;
-            _field.Text = Format(_value, live: false);
+            ShowText(Format(_value, live: false));
             _field.SelectAll();
         }
     }

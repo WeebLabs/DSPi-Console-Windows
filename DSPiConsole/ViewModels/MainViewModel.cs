@@ -2583,86 +2583,91 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnLoudnessEnabledChanged(bool value)
     {
-        Task.Run(() => _device.SetLoudnessEnabled(value));
+        DeviceWrite(() => _device.SetLoudnessEnabled(value));
         CheckDirty();
     }
 
+    // Through the ordered queue, which the window's live sends share.
     partial void OnLoudnessRefSPLChanged(float value)
     {
-        Task.Run(() => _device.SetLoudnessRefSPL(value));
+        DeviceWrite(() => _device.SetLoudnessRefSPL(value));
         CheckDirty();
     }
 
     partial void OnLoudnessIntensityChanged(float value)
     {
-        Task.Run(() => _device.SetLoudnessIntensity(value));
+        DeviceWrite(() => _device.SetLoudnessIntensity(value));
         CheckDirty();
     }
 
     partial void OnCrossfeedEnabledChanged(bool value)
     {
-        Task.Run(() => _device.SetCrossfeedEnabled(value));
+        DeviceWrite(() => _device.SetCrossfeedEnabled(value));
         CheckDirty();
     }
 
+    // Preset, cutoff and feed go through the ordered queue the window's live
+    // sends share, so switching to Custom lands before a drag's values.
     partial void OnCrossfeedPresetChanged(int value)
     {
-        Task.Run(() => _device.SetCrossfeedPreset(value));
+        DeviceWrite(() => _device.SetCrossfeedPreset(value));
         CheckDirty();
     }
 
     partial void OnCrossfeedFreqChanged(float value)
     {
-        Task.Run(() => _device.SetCrossfeedFreq(value));
+        DeviceWrite(() => _device.SetCrossfeedFreq(value));
         CheckDirty();
     }
 
     partial void OnCrossfeedFeedChanged(float value)
     {
-        Task.Run(() => _device.SetCrossfeedFeed(value));
+        DeviceWrite(() => _device.SetCrossfeedFeed(value));
         CheckDirty();
     }
 
     partial void OnCrossfeedItdChanged(bool value)
     {
-        Task.Run(() => _device.SetCrossfeedItd(value));
+        DeviceWrite(() => _device.SetCrossfeedItd(value));
         CheckDirty();
     }
 
     // Volume leveller change handlers
     partial void OnLevellerEnabledChanged(bool value)
     {
-        Task.Run(() => _device.SetLevellerEnabled(value));
+        DeviceWrite(() => _device.SetLevellerEnabled(value));
         CheckDirty();
     }
 
+    // Amount, max gain and gate go through the ordered queue the window's
+    // live sends share.
     partial void OnLevellerAmountChanged(float value)
     {
-        Task.Run(() => _device.SetLevellerAmount(value));
+        DeviceWrite(() => _device.SetLevellerAmount(value));
         CheckDirty();
     }
 
     partial void OnLevellerSpeedChanged(int value)
     {
-        Task.Run(() => _device.SetLevellerSpeed(value));
+        DeviceWrite(() => _device.SetLevellerSpeed(value));
         CheckDirty();
     }
 
     partial void OnLevellerMaxGainDbChanged(float value)
     {
-        Task.Run(() => _device.SetLevellerMaxGain(value));
+        DeviceWrite(() => _device.SetLevellerMaxGain(value));
         CheckDirty();
     }
 
     partial void OnLevellerLookaheadChanged(bool value)
     {
-        Task.Run(() => _device.SetLevellerLookahead(value));
+        DeviceWrite(() => _device.SetLevellerLookahead(value));
         CheckDirty();
     }
 
     partial void OnLevellerGateDbChanged(float value)
     {
-        Task.Run(() => _device.SetLevellerGate(value));
+        DeviceWrite(() => _device.SetLevellerGate(value));
         CheckDirty();
     }
 
@@ -2676,21 +2681,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         byte detector = (byte)(LevellerDetectorMask & 0xFF);
         byte apply = (byte)(LevellerApplyMask & 0xFF);
-        Task.Run(() => _device.SetLevellerMasks(detector, apply));
+        DeviceWrite(() => _device.SetLevellerMasks(detector, apply));
         CheckDirty();
     }
 
     partial void OnLoudnessOutputMaskChanged(int value)
     {
         ushort mask = (ushort)(value & 0xFFFF);
-        Task.Run(() => _device.SetLoudnessMask(mask));
+        DeviceWrite(() => _device.SetLoudnessMask(mask));
         CheckDirty();
     }
 
     partial void OnCrossfeedOutputPairMaskChanged(int value)
     {
         byte mask = (byte)(value & 0xFF);
-        Task.Run(() => _device.SetCrossfeedOutputs(mask));
+        DeviceWrite(() => _device.SetCrossfeedOutputs(mask));
         CheckDirty();
     }
 

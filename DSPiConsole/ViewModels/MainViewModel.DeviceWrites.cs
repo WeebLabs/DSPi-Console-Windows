@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using DSPiConsole.Core.Models;
 
 namespace DSPiConsole.ViewModels;
 
@@ -23,6 +24,52 @@ public partial class MainViewModel
     }
 
     // ── Live sends: device only, for values during a drag ──
+
+    public enum PsybassField { Cutoff, Harmonics, Drive, Character, Original }
+
+    /// <summary>A psychoacoustic bass value during a drag, clamped to its
+    /// range; the properties commit it.</summary>
+    public void SendPsybassLive(PsybassField field, float value)
+    {
+        switch (field)
+        {
+            case PsybassField.Cutoff: { float v = Math.Clamp(value, PsybassLimits.CutoffMinHz, PsybassLimits.CutoffMaxHz); DeviceWrite(() => _device.SetPsybassCutoff(v)); break; }
+            case PsybassField.Harmonics: { float v = Math.Clamp(value, PsybassLimits.HarmonicsMinDb, PsybassLimits.HarmonicsMaxDb); DeviceWrite(() => _device.SetPsybassHarmonics(v)); break; }
+            case PsybassField.Drive: { float v = Math.Clamp(value, PsybassLimits.DriveMinDb, PsybassLimits.DriveMaxDb); DeviceWrite(() => _device.SetPsybassDrive(v)); break; }
+            case PsybassField.Character: { float v = Math.Clamp(value, PsybassLimits.CharacterMinPct, PsybassLimits.CharacterMaxPct); DeviceWrite(() => _device.SetPsybassCharacter(v)); break; }
+            default: { float v = Math.Clamp(value, PsybassLimits.OriginalMinDb, PsybassLimits.OriginalMaxDb); DeviceWrite(() => _device.SetPsybassOriginal(v)); break; }
+        }
+    }
+
+    public enum LevellerField { Amount, MaxGain, Gate }
+
+    /// <summary>A leveller value during a drag, clamped as the firmware does;
+    /// the properties commit it.</summary>
+    public void SendLevellerLive(LevellerField field, float value)
+    {
+        switch (field)
+        {
+            case LevellerField.Amount: { float v = Math.Clamp(value, 0, 100); DeviceWrite(() => _device.SetLevellerAmount(v)); break; }
+            case LevellerField.MaxGain: { float v = Math.Clamp(value, 0, 35); DeviceWrite(() => _device.SetLevellerMaxGain(v)); break; }
+            default: { float v = Math.Clamp(value, -96, 0); DeviceWrite(() => _device.SetLevellerGate(v)); break; }
+        }
+    }
+
+    /// <summary>Crossfeed cutoff (500-2000 Hz) or feed (0-15 dB) during a
+    /// drag; the properties commit them.</summary>
+    public void SendCrossfeedLive(bool freq, float value)
+    {
+        if (freq) { float v = Math.Clamp(value, 500, 2000); DeviceWrite(() => _device.SetCrossfeedFreq(v)); }
+        else { float v = Math.Clamp(value, 0, 15); DeviceWrite(() => _device.SetCrossfeedFeed(v)); }
+    }
+
+    /// <summary>Loudness reference SPL (40-100 dB) or intensity (0-200 %)
+    /// during a drag; the properties commit them.</summary>
+    public void SendLoudnessLive(bool refSpl, float value)
+    {
+        if (refSpl) { float v = Math.Clamp(value, 40, 100); DeviceWrite(() => _device.SetLoudnessRefSPL(v)); }
+        else { float v = Math.Clamp(value, 0, 200); DeviceWrite(() => _device.SetLoudnessIntensity(v)); }
+    }
 
     /// <summary>An output's gain during a drag; <see cref="SetChannelGain"/>
     /// commits it.</summary>

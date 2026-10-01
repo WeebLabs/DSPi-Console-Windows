@@ -377,6 +377,14 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **Settings page** (`Settings/Pages/GraphingSpectrumPage.cs`): Display (strength 30-100 %, peak hold, smoothing), Vertical scale (floor -60/-90/-120, ceiling 0/+6/+12), Engine (transform size within the caps, averaging Off-3 s, peak decay Off-30 dB/s)
 - **Bars** (`RtaBandsView`): equal-width bars over the measured bands, gap 18 % of a slot (0.5-2 px), 1.5 px corners, the colour from 95 % at the top to 45 % at the base; peak caps 1.5 px at 90 %; dB lines every 12 dB (0 dB at 35 %, others 12 %) with 8 pt labels; 1-2-5 frequency labels, decades placed first
 
+## Loudness, Crossfeed, Volume Leveller, Psychoacoustic Bass
+
+- Code-built windows on `ToolWindowChrome`: header (22 px accent glyph, title 14 semibold, subtitle 10 secondary, enable switch), a 1 px rule, then two columns 16 px padded with a 1 px divider (the leveller is one 380 px column); section labels 10 bold secondary; every value a `ParameterRow`
+- Loudness 780 x 440, Crossfeed 780 x 500, Leveller 380 x 560, Psychoacoustic Bass 780 x 520
+- **Curve graphs** (`Controls/ToolCurveGraph.cs`, Win2D, in an 8 px rounded `PanelColor` panel): 20 Hz-20 kHz log axis, grid at 100/1k/10k, dB axis fitted to the curves (>= 10 dB, 20 % spare), 5 or 10 dB steps, 7 pt Cascadia labels; curves 2 px round; loudness a "Curve at -40dB" badge in the accent at 80 %, crossfeed a Direct (accent) / Crossfeed (#FF9F0A) legend; "Disabled" in 11 pt when off
+- **Psychoacoustic bass spectrum** (`Controls/PsybassSpectrumGraph.cs`): original band 20 Hz-fc in the accent at 35 %, harmonics fc-4fc #FF9F0A at 55 %, dashed fc and 4fc markers, Original / Harmonics legend
+- Mask chips: equal `ToggleButton`s 26 px high, 6 px apart, named in their tooltips
+
 ## Subharmonic Synthesizer (SubharmonicSynthWindow.cs)
 
 - 900 x 660 window, header (accent icon, title 14 semibold, subtitle 10, SOLO pill #FF9F0A when on, enable switch), two columns of 16 px padding with a 1 px divider

@@ -6,8 +6,8 @@ namespace DSPiConsole.Core.Models;
 /// </summary>
 public static class LoudnessData
 {
-    // ISO 226:2003 data table: (frequency, af, Lu, Tf)
-    // 30 entries from 20 Hz to 12500 Hz
+    // ISO 226:2003 data table: (frequency, af, Lu, Tf), 30 entries from
+    // 20 Hz to 16 kHz, as the macOS Console's.
     private static readonly (float f, float af, float lu, float tf)[] Iso226Table =
     {
         (20f, 0.532f, -31.6f, 78.5f),
@@ -39,7 +39,7 @@ public static class LoudnessData
         (8000f, 0.254f, -11.2f, 12.6f),
         (10000f, 0.271f, -10.7f, 13.9f),
         (12500f, 0.301f, -3.1f, 12.3f),
-        (12500f, 0.301f, -3.1f, 12.3f) // Duplicate last for interpolation
+        (16000f, 0.310f, -2.0f, 17.0f),
     };
 
     public static IReadOnlyList<float> Frequencies => Iso226Table.Select(e => e.f).ToArray();
@@ -51,19 +51,24 @@ public static class LoudnessData
     {
         float Af = 4.47e-3f * (MathF.Pow(10, 0.025f * phon) - 1.15f)
                    + MathF.Pow(0.4f * MathF.Pow(10, (tf + lu) / 10.0f - 9.0f), af);
-        float Lp = (10.0f / af) * MathF.Log10(Af) - lu + 94.0f;
-        return Lp;
+        // Below the hearing threshold the term can reach zero or less.
+        if (Af < 1e-10f) Af = 1e-10f;
+        return (10.0f / af) * MathF.Log10(Af) - lu + 94.0f;
     }
 
     /// <summary>
-    /// Calculate the loudness compensation in dB for a given frequency's ISO 226 table entry.
+    /// The loudness compensation in dB for one ISO 226 table entry: how much
+    /// more this frequency needs than 1 kHz does to sound as loud at the
+    /// lower level. The flat drop in level itself is not compensated, so
+    /// 1 kHz reads close to 0 dB. None at or above the reference.
     /// </summary>
     public static float LoudnessCompensationDB(float tf, float af, float lu, float refSPL, float effectivePhon, float intensity)
     {
+        if (effectivePhon >= refSPL) return 0;
         float refLevel = Iso226SPL(tf, af, lu, refSPL);
         float currentLevel = Iso226SPL(tf, af, lu, effectivePhon);
-        float compensation = currentLevel - refLevel;
-        return compensation * (intensity / 100.0f);
+        float flat = effectivePhon - refSPL;
+        return (currentLevel - refLevel - flat) * (intensity / 100.0f);
     }
 
     /// <summary>
@@ -71,8 +76,8 @@ public static class LoudnessData
     /// </summary>
     public static (float freq, float db)[] GetCompensationCurve(float refSPL, float effectivePhon, float intensity)
     {
-        var result = new (float freq, float db)[Iso226Table.Length - 1]; // Exclude duplicate last
-        for (int i = 0; i < Iso226Table.Length - 1; i++)
+        var result = new (float freq, float db)[Iso226Table.Length];
+        for (int i = 0; i < Iso226Table.Length; i++)
         {
             var (f, af, lu, tf) = Iso226Table[i];
             float db = LoudnessCompensationDB(tf, af, lu, refSPL, effectivePhon, intensity);

@@ -1,78 +1,57 @@
 namespace DSPiConsole.Core.Models;
 
 /// <summary>
-/// BS2B (Bauer Stereophonic-to-Binaural) crossfeed calculations and presets.
+/// BS2B (Bauer Stereophonic-to-Binaural) crossfeed presets and the response the
+/// firmware's filter actually has, as the macOS Console draws it.
 /// </summary>
 public static class CrossfeedData
 {
-    /// <summary>
-    /// Crossfeed presets: (cutoff frequency Hz, feed level dB, description).
-    /// </summary>
-    public static readonly (float freq, float feed, string desc)[] Presets = new[]
+    /// <summary>The device's presets by index; the last is Custom, which starts
+    /// from the Default values.</summary>
+    public static readonly (string Name, string Description, float Freq, float Feed)[] Presets =
     {
-        (700f, 4.5f, "Balanced, most popular"),
-        (700f, 6.0f, "Stronger spatial effect"),
-        (650f, 9.5f, "Natural speaker-like"),
-        (700f, 4.5f, "User-defined") // Custom starts with Default values
+        ("Default", "700 Hz / 4.5 dB - Balanced, most popular", 700f, 4.5f),
+        ("Chu Moy", "700 Hz / 6.0 dB - Stronger spatial effect", 700f, 6.0f),
+        ("Jan Meier", "650 Hz / 9.5 dB - Natural speaker-like", 650f, 9.5f),
+        ("Custom", "User-defined parameters", 700f, 4.5f),
     };
 
+    public const int CustomPreset = 3;
+    public const float FreqMin = 500, FreqMax = 2000, FeedMin = 0, FeedMax = 15;
+
     /// <summary>
-    /// Calculate frequency response curves for BS2B crossfeed filter.
-    /// Returns logarithmically spaced frequencies from 20 Hz to 20 kHz and corresponding magnitudes in dB.
+    /// The direct and crossfed paths' magnitude at 100 log-spaced frequencies
+    /// from 20 Hz to 20 kHz. The crossfeed path is the firmware's one-pole
+    /// lowpass at the cutoff with complementary gain G = 1 / (1 + 10^(feed/20));
+    /// the direct path is one minus it, so the two sum to unity.
     /// </summary>
-    /// <param name="cutoffFreq">Lowpass cutoff frequency in Hz (500-2000)</param>
-    /// <param name="feedDb">Feed level in dB (0-15)</param>
-    /// <returns>Tuple of (frequencies, direct path magnitudes, crossfeed path magnitudes) in dB</returns>
-    public static (float[] freqs, float[] directMags, float[] crossfeedMags) GetResponseCurves(float cutoffFreq, float feedDb)
+    public static (float[] Freqs, float[] DirectDb, float[] CrossfeedDb) GetResponseCurves(float cutoffFreq, float feedDb)
     {
         const int numPoints = 100;
         const float sampleRate = 48000f;
-        const float minFreq = 20f;
-        const float maxFreq = 20000f;
+        float fc = Math.Clamp(cutoffFreq, FreqMin, FreqMax);
+        float feed = Math.Clamp(feedDb, FeedMin, FeedMax);
 
-        // Clamp input parameters to valid ranges to prevent division by zero
-        cutoffFreq = Math.Clamp(cutoffFreq, 500f, 2000f);
-        feedDb = Math.Clamp(feedDb, 0f, 15f);
+        float g = 1f / (1f + MathF.Pow(10f, feed / 20f));
+        float x = MathF.Exp(-2f * MathF.PI * fc / sampleRate);
+        float a0 = g * (1f - x);
 
         var freqs = new float[numPoints];
-        var directMags = new float[numPoints];
-        var crossfeedMags = new float[numPoints];
-
-        // Logarithmic frequency spacing
-        float logMin = MathF.Log10(minFreq);
-        float logMax = MathF.Log10(maxFreq);
-        float logStep = (logMax - logMin) / (numPoints - 1);
-
+        var direct = new float[numPoints];
+        var cross = new float[numPoints];
         for (int i = 0; i < numPoints; i++)
         {
-            freqs[i] = MathF.Pow(10f, logMin + i * logStep);
+            float f = 20f * MathF.Pow(1000f, (float)i / (numPoints - 1));
+            float omega = 2f * MathF.PI * f / sampleRate;
+            // H(z) = a0 / (1 - x z^-1)
+            float denRe = 1f - x * MathF.Cos(omega), denIm = x * MathF.Sin(omega);
+            float den = denRe * denRe + denIm * denIm;
+            float lpRe = a0 * denRe / den, lpIm = -a0 * denIm / den;
+            float dRe = 1f - lpRe, dIm = -lpIm;
+            freqs[i] = f;
+            cross[i] = 20f * MathF.Log10(MathF.Max(MathF.Sqrt(lpRe * lpRe + lpIm * lpIm), 1e-10f));
+            direct[i] = 20f * MathF.Log10(MathF.Max(MathF.Sqrt(dRe * dRe + dIm * dIm), 1e-10f));
         }
-
-        // BS2B filter parameters
-        float omega = 2f * MathF.PI * cutoffFreq / sampleRate; // Normalized angular frequency
-        float feedLinear = MathF.Pow(10f, -feedDb / 20f); // Convert dB to linear (attenuation)
-
-        // Calculate magnitude response at each frequency
-        for (int i = 0; i < numPoints; i++)
-        {
-            float freq = freqs[i];
-            float w = 2f * MathF.PI * freq / sampleRate; // Normalized angular frequency
-
-            // Crossfeed path: lowpass filter with feed attenuation
-            // H_crossfeed(w) = feedLinear / sqrt(1 + (w/omega)^2)
-            float ratio = w / omega;
-            float crossfeedLinear = feedLinear / MathF.Sqrt(1f + ratio * ratio);
-
-            // Direct path: complementary to maintain constant total energy
-            // H_direct(w) = sqrt(1 - H_crossfeed^2)
-            float directLinear = MathF.Sqrt(1f - crossfeedLinear * crossfeedLinear);
-
-            // Convert to dB (20 * log10(magnitude))
-            // Clamp to prevent log(0)
-            directMags[i] = 20f * MathF.Log10(MathF.Max(directLinear, 1e-6f));
-            crossfeedMags[i] = 20f * MathF.Log10(MathF.Max(crossfeedLinear, 1e-6f));
-        }
-
-        return (freqs, directMags, crossfeedMags);
+        return (freqs, direct, cross);
     }
 }
