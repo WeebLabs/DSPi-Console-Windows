@@ -17,7 +17,7 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 | 3.1 ParameterRow, 3.2 Limiter | Done 2026-10-03, committed on `tool-controls`; hardware test pending |
 | 3.3 Subharm window, 3.4 Tube window | Done 2026-10-03, committed on `tool-controls`; hardware test pending |
 | 4.1 RTA engine, 4.2 window, 4.3 graph overlay, 4.5 gear SPECTRUM section | Done 2026-10-03, committed on `spectrum-analyser`; hardware test pending |
-| 4.4 bar strip, 4.6 Settings page, RTA Bars switch | Not started |
+| 4.4 bar strip and RTA Bars switch, 4.6 Settings page, 4.7 bar loop paused when hidden | Done 2026-10-03, committed on `spectrum-analyser`; hardware test pending |
 | 5-8 | Not started |
 
 Notes from doing Phases 0 and 1:

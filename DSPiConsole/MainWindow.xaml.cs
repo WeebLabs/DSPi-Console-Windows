@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
     private SubharmonicSynthWindow? _subharmWindow;
     private TubeModellerWindow? _tubeWindow;
     private SpectrumAnalyserWindow? _spectrumWindow;
+    private readonly Controls.Rta.SpectrumBarStrip _barStrip;
     private UpmixerWindow? _upmixerWindow;
     private VolumeLevellerWindow? _levellerWindow;
     private MatrixMixerWindow? _matrixMixerWindow;
@@ -169,6 +170,11 @@ public sealed partial class MainWindow : Window
                 AppSettings.Instance.InputPairLinkedExt is { Length: >= 3 } ext && ext[pair - 1]);
         BodePlot.DataContext = ViewModel;
         BodePlot.SetDottedInactiveEnabled(AppSettings.Instance.DottedInactiveChannels);
+        // The spectrum's bars, between the graph's gripper and the page below,
+        // in the row the legend pills once used.
+        _barStrip = new Controls.Rta.SpectrumBarStrip(ViewModel, this, OpenSpectrumAnalyser) { Margin = new Thickness(0, 0, 0, 12) };
+        Grid.SetRow(_barStrip, 2);
+        ContentGrid.Children.Add(_barStrip);
         SyncLinkedPairGradient();
         UpdateGraphPopoutButtonMargin();
 
@@ -180,6 +186,12 @@ public sealed partial class MainWindow : Window
             appWindow.Resize(new Windows.Graphics.SizeInt32((int)(1000 * dpiScale), (int)(825 * dpiScale)));
             appWindow.Title = "DSPi Console";
             appWindow.Closing += OnAppWindowClosing;
+            // The spectrum bars stop animating while the window is minimised.
+            appWindow.Changed += (s, e) =>
+            {
+                if (e.DidPresenterChange || e.DidSizeChange)
+                    _barStrip.HostActive = s.Presenter is not OverlappedPresenter { State: OverlappedPresenterState.Minimized };
+            };
         }
 
 
@@ -4991,7 +5003,9 @@ public sealed partial class MainWindow : Window
         _tubeWindow.Activate();
     }
 
-    private void OnSpectrumAnalyserClick(object sender, RoutedEventArgs e)
+    private void OnSpectrumAnalyserClick(object sender, RoutedEventArgs e) => OpenSpectrumAnalyser();
+
+    private void OpenSpectrumAnalyser()
     {
         if (_spectrumWindow == null)
         {

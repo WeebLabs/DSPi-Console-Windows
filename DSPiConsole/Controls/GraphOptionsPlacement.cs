@@ -23,10 +23,11 @@ public static class GraphOptionsPlacement
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
 
-    /// <summary>The panel's width plus its presenter border and a small margin.</summary>
-    private const double NeededWidth = 280 + 2 + 6;
+    /// <summary>The presenter's border and a small margin around the panel.</summary>
+    private const double Chrome = 2 + 6;
 
-    public static void ShowAt(Flyout flyout, FrameworkElement anchor, Window window)
+    /// <param name="panelWidth">The panel's own width, for the room check.</param>
+    public static void ShowAt(Flyout flyout, FrameworkElement anchor, Window window, double panelWidth = 280)
     {
         // Lets the popup leave the window's bounds, which centring under a
         // gear near the window's edge needs.
@@ -34,11 +35,11 @@ public static class GraphOptionsPlacement
         // Translucent, as the macOS Console's popover is: desktop acrylic
         // behind a presenter with no fill of its own (GraphOptionsPresenterStyle).
         flyout.SystemBackdrop = new Microsoft.UI.Xaml.Media.DesktopAcrylicBackdrop();
-        flyout.Placement = Placement(anchor, window);
+        flyout.Placement = Placement(anchor, window, panelWidth + Chrome);
         flyout.ShowAt(anchor);
     }
 
-    private static FlyoutPlacementMode Placement(FrameworkElement anchor, Window window)
+    private static FlyoutPlacementMode Placement(FrameworkElement anchor, Window window, double neededWidth)
     {
         try
         {
@@ -49,7 +50,7 @@ public static class GraphOptionsPlacement
             if (!ClientToScreen(hwnd, ref origin)) return FlyoutPlacementMode.Bottom;
             var topLeft = anchor.TransformToVisual(null).TransformPoint(new Point(0, 0));
             double left = origin.X + topLeft.X * scale, right = left + anchor.ActualWidth * scale;
-            double centre = (left + right) / 2, half = NeededWidth * scale / 2;
+            double centre = (left + right) / 2, half = neededWidth * scale / 2;
             int top = origin.Y + (int)Math.Round(topLeft.Y * scale);
             var area = DisplayArea.GetFromPoint(new PointInt32((int)centre, top), DisplayAreaFallback.Nearest).WorkArea;
             if (centre + half > area.X + area.Width) return FlyoutPlacementMode.BottomEdgeAlignedRight;

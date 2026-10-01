@@ -401,7 +401,9 @@ at the top. Below 200 Hz the reading comes from a bank of third-octave filters; 
 channel selected, the graph shows the FFT's finer detail above the bass, and a thin contour traces the peak hold.
 
 The gear at the graph's top right chooses what is shown. Pick Inputs or Outputs, then click the channels to include;
-Clear hides the spectrum, and the FFT Graph switch turns the graph's drawing off without forgetting the channels.
+Clear hides the spectrum. The FFT Graph switch draws it on the graph, and the RTA Bars switch adds a strip of
+third-octave bars under the graph, one cell per channel. Drag the strip's bottom edge to change its height; its own
+gear (shown on hover) sets how many columns the cells use and opens the analyser window.
 The dashboard remembers its choice. A channel page starts on its own channel each time it opens.
 
 The Spectrum Analyser window (Ctrl+Shift+A) shows the open page's spectrum at a larger size, as curves, as
@@ -410,6 +412,11 @@ status line reports how often each channel refreshes, the frame rate, and how mu
 audio time the analyser is using.
 
 The analyser runs only while something on screen shows it, and stops on the device as soon as nothing does.
+
+Settings › Graphing › Spectrum Analyser sets how strongly the spectrum is drawn on the graph, the peak hold and the
+smoothing between device frames, the scale's floor and ceiling, and the device's transform size, averaging and peak
+decay. The DSPi forgets those three at every power cycle, so Console remembers them and sends them whenever the
+analyser starts. A larger transform resolves finer detail but refreshes each channel less often.
 
 ### Monitoring and diagnostics
 

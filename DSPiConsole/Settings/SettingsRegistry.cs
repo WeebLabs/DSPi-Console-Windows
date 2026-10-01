@@ -46,6 +46,7 @@ internal static class SettingsRegistry
         TryAdd<GraphingStylePage>(pages);
         TryAdd<GraphingScalePage>(pages);
         TryAdd<GraphingGridLabelsPage>(pages);
+        TryAdd<GraphingSpectrumPage>(pages);
 
         // ── System ─────────────────────────────────────────────────
         TryAdd<HardwareOverviewPage>(pages);

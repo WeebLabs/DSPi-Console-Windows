@@ -4,9 +4,11 @@
 
 ### Spectrum analyser
 - The response graph shows a live spectrum behind its curves, in each channel's own colour, on its own dBFS scale: the bass bands where the transform is coarse, the finer FFT detail above them when one channel is selected, with a peak-hold contour
-- The graph's gear has a SPECTRUM section: an Inputs | Outputs switch, the channels as chips, Clear, and an FFT Graph switch. The dashboard remembers its channels; a channel page starts on its own channel
+- The graph's gear has a SPECTRUM section: an Inputs | Outputs switch, the channels as chips, Clear, and FFT Graph and RTA Bars switches. The dashboard remembers its channels; a channel page starts on its own channel
 - A Spectrum Analyser window (Ctrl+Shift+A) mirrors the open page's spectrum as curves, bars or both, with channels hidden in the window only, and a status line with the refresh rate, frames per second and the analyser's main-loop and bass load
 - The analyser runs only while something shows it, and stops on the device when nothing does
+- RTA Bars: a strip of third-octave bars under the response graph, one cell per channel in 1 to 4 columns, its height dragged from the bottom edge; its gear chooses the columns and opens the analyser window
+- Settings › Graphing › Spectrum Analyser: spectrum strength, peak hold, smoothing, the floor and ceiling, and the device's transform size, averaging and peak decay, which the Console remembers and sends whenever the analyser starts
 
 ### Graphing
 - Inputs beyond the active source's channel count (inputs 3 to 8 on a stereo source) no longer draw on the response graph, where they showed as one multicoloured line with no pill to hide it

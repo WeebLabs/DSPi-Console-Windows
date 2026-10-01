@@ -200,6 +200,7 @@ public sealed class SpectrumAnalyserWindow : Window
             _statusBar.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
         }
         _grid?.Invalidate();
+        foreach (var v in _bandViews) v.Redraw();
         SyncBarsSubscription();
         RefreshStatus();
     }

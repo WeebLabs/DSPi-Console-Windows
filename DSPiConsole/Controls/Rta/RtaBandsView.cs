@@ -63,6 +63,10 @@ public sealed class RtaBandsView : UserControl
         }
     }
 
+    /// <summary>Draw again with the current preferences (scale, peak hold),
+    /// which do not arrive as a new frame.</summary>
+    public void Redraw() => _canvas.Invalidate();
+
     public void Dispose()
     {
         SetRendering(false);
