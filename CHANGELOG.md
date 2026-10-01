@@ -2,6 +2,11 @@
 
 ## 2026-10-03
 
+### Subharmonic synthesizer and tube modeller
+- A Subharmonic Synthesizer window (Ctrl+Shift+S): the band graph with the synthesized subs, the 70 Hz boost and the ceiling, the band levels, the headroom cost, selectivity, sub ceiling, LF boost, per-output selection with sub meters, pair linking, solo (cleared when the window closes) and four starting points
+- A Tube Modeller window (Ctrl+Shift+D): Basic mode shows the selected tube, glowing while on and brightening with the signal, with a shelf of sixteen tubes, drive and mix; Advanced mode shows the transfer curve with its second and third harmonics, the tube picker, trim, the character controls, the rectifier and the output stage; five starting points; the mode is remembered
+- Both windows follow a drag on their graphs as it happens
+
 ### Output limiter
 - Each output's page has a limiter icon under the mute button: grey when off, the accent colour when on, orange while it is reducing gain; a click switches the limiter, a right-click opens its settings
 - The settings hold the threshold, release and link group, with Copy to all outputs and an All outputs menu (link every stereo pair, unlink all, switch every limiter off); linked outputs share their settings, as the firmware gangs them

@@ -55,6 +55,8 @@ public sealed partial class MainWindow : Window
     private LoudnessWindow? _loudnessWindow;
     private CrossfeedWindow? _crossfeedWindow;
     private PsychoacousticBassWindow? _psybassWindow;
+    private SubharmonicSynthWindow? _subharmWindow;
+    private TubeModellerWindow? _tubeWindow;
     private UpmixerWindow? _upmixerWindow;
     private VolumeLevellerWindow? _levellerWindow;
     private MatrixMixerWindow? _matrixMixerWindow;
@@ -4956,6 +4958,34 @@ public sealed partial class MainWindow : Window
             _psybassWindow.Closed += (s, e) => _psybassWindow = null;
         }
         _psybassWindow.Activate();
+    }
+
+    private async void OnSubharmClick(object sender, RoutedEventArgs e)
+    {
+        // Refresh from the device so a value changed elsewhere is reflected; the
+        // window shows a notice of its own on firmware without the feature.
+        if (ViewModel.IsDeviceConnected && ViewModel.SubharmSupported)
+            await Task.Run(() => ViewModel.FetchSubharm());
+
+        if (_subharmWindow == null)
+        {
+            _subharmWindow = new SubharmonicSynthWindow(ViewModel);
+            _subharmWindow.Closed += (s, e) => _subharmWindow = null;
+        }
+        _subharmWindow.Activate();
+    }
+
+    private async void OnTubeClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsDeviceConnected && ViewModel.TubeSupported)
+            await Task.Run(() => ViewModel.FetchTube());
+
+        if (_tubeWindow == null)
+        {
+            _tubeWindow = new TubeModellerWindow(ViewModel);
+            _tubeWindow.Closed += (s, e) => _tubeWindow = null;
+        }
+        _tubeWindow.Activate();
     }
 
     private async void OnUpmixClick(object sender, RoutedEventArgs e)

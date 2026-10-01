@@ -368,6 +368,18 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **Readouts**: 16 px labels, #EB17171C, 4 px radius, Cascadia Code 10 semibold, at the bottom edge (frequency) and left edge (gain)
 - **Graph options**: the gear at the graph's top right (`GraphOptionsPanel`), 280 px, a main page and a Graph Setup page
 
+## Subharmonic Synthesizer (SubharmonicSynthWindow.cs)
+
+- 900 x 660 window, header (accent icon, title 14 semibold, subtitle 10, SOLO pill #FF9F0A when on, enable switch), two columns of 16 px padding with a 1 px divider
+- **Band graph** (`Controls/SubharmBandGraph.cs`, Win2D): 16-250 Hz log by -42..+18 dB, 38 px annotation strip and 13 px axis strip; source bands white 10 % (4 % when their band is off) with brackets; sub blocks accent, #FF9F0A and #BF5AF2 at 40 % with 90 % outlines; the 70 Hz bell #30D158 at 80 %, 1.4 px; the ceiling #FF453A dashed across 16-80 Hz; 188 px high in an 8 px rounded panel (`ToolWindowChrome.PanelColor`, #99161618, shared with the tube panels)
+- Section labels 10 bold secondary; band rows show "Off" at -30 dB; sub meters 3 px under each output chip, polled at 10 Hz while the window is open and the effect is on
+
+## Tube Modeller (TubeModellerWindow.cs)
+
+- 900 x 700 window; header tube icon (`Controls/TubeIcon.cs`, 27 px) whose filament glows #FF9F0A while on (0.9 s in, 0.6 s out), Basic | Advanced picker
+- **Transfer curve** (`Controls/TubeTransferGraph.cs`): input -1..1 by output -1.4..1.4, clipped inputs shaded #FF9F0A at 10 %, dashed linear reference, full-scale lines #FF453A dashed, curve accent 1.6 px
+- **Basic showcase** (`Controls/TubeIllustration.cs`): 168 x 280 tube from the macOS Console's 120 x 200 family geometry, three Win2D layers (tube, heater, bloom); bloom opacity = sqrt(peak) of the processed outputs; a warm radial wash behind the glass while on
+
 ## Output Limiter (MainWindow.Limiter.cs, Controls/OutputLimiterSettings.cs)
 
 - **Icon** (`Controls/LimiterIcon.cs`): 19 px gauge glyph under the output card's mute button, 1.5 px round strokes and a filled hub; secondary text colour when off, `SystemAccentColor` when on, #FF9F0A while gain reduction is 0.05 dB or more; opacity 0.5 while disconnected. Right-click opens `OutputLimiterSettings` (320 px, padding 16) in a flyout to the left

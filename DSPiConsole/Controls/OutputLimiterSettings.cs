@@ -23,7 +23,7 @@ public sealed class OutputLimiterSettings : UserControl
     private readonly ToggleSwitch _switch = new() { OnContent = "", OffContent = "", MinWidth = 0 };
     private readonly ParameterRow _threshold;
     private readonly ParameterRow _release;
-    private readonly Button[] _segments = new Button[LimiterLimits.LinkGroupMax + 1];
+    private readonly SegmentedPicker _segments;
     private readonly TextBlock _linkSummary = new() { FontSize = 9, TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _settings = new() { Spacing = 14 };
     private readonly StackPanel _actions;
@@ -79,7 +79,11 @@ public sealed class OutputLimiterSettings : UserControl
         // ── Link group ──
         var link = new StackPanel { Spacing = 6 };
         link.Children.Add(new TextBlock { Text = "Link group", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
-        link.Children.Add(BuildSegments());
+        _segments = new SegmentedPicker(
+            Enumerable.Range(0, LimiterLimits.LinkGroupMax + 1).Select(g => g == 0 ? "Off" : g.ToString()).ToList(),
+            Enumerable.Range(0, LimiterLimits.LinkGroupMax + 1).Select(g => g == 0 ? "Not linked" : $"Link group {g}").ToList());
+        _segments.Picked += g => _vm.SetLimiterLinkGroup(_output, g);
+        link.Children.Add(_segments);
         link.Children.Add(_linkSummary);
         ToolTipService.SetToolTip(link,
             "Outputs in the same group act as one limiter: they share on/off, threshold and release, so changing one "
@@ -171,49 +175,13 @@ public sealed class OutputLimiterSettings : UserControl
         _updating = false;
         _threshold.Value = s.ThresholdDb;
         _release.Value = s.ReleaseMs;
-        for (int g = 0; g < _segments.Length; g++)
-            _segments[g].Background = new SolidColorBrush(g == s.LinkGroup ? Color.FromArgb(74, 255, 255, 255) : Colors.Transparent);
+        _segments.Selected = s.LinkGroup;
         _linkSummary.Text = LinkSummary(s.LinkGroup);
         _settings.IsHitTestVisible = s.Enabled && connected;
         _settings.Opacity = s.Enabled ? 1 : 0.4;
         _threshold.IsEnabled = _release.IsEnabled = s.Enabled && connected;
-        foreach (var b in _segments) b.IsEnabled = s.Enabled && connected;
+        _segments.IsEnabled = s.Enabled && connected;
         foreach (var c in ((Grid)_actions.Children[1]).Children) ((Control)c).IsEnabled = connected;
-    }
-
-    private FrameworkElement BuildSegments()
-    {
-        var grid = new Grid { Height = 24 };
-        for (int g = 0; g < _segments.Length; g++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            int group = g;
-            var b = new Button
-            {
-                Content = g == 0 ? "Off" : g.ToString(),
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                Padding = new Thickness(0),
-                Margin = new Thickness(1),
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(5),
-                Background = new SolidColorBrush(Colors.Transparent),
-            };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, g == 0 ? "Not linked" : $"Link group {g}");
-            b.Click += (_, _) => _vm.SetLimiterLinkGroup(_output, group);
-            Grid.SetColumn(b, g);
-            grid.Children.Add(b);
-            _segments[g] = b;
-        }
-        return new Border
-        {
-            Child = grid,
-            CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Color.FromArgb(13, 255, 255, 255)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(33, 255, 255, 255)),
-            BorderThickness = new Thickness(1),
-        };
     }
 
     private string LinkSummary(int group)

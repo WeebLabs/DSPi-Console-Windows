@@ -61,3 +61,6 @@ public static class SubharmSelectMode
     public const int Sustained = 2;
     public const int Max = Sustained;
 }
+
+/// <summary>The continuous subharm values a slider can drag.</summary>
+public enum SubharmField { Low, High, Top, Boost, Depth, Hold, Ceiling }

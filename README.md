@@ -283,6 +283,38 @@ that the ear interprets as bass the driver cannot physically reproduce. The cuto
 clipper drive, even-to-odd harmonic character and the amount of original bass retained are all adjustable, with
 starting-point presets and per-output selection.
 
+### Subharmonic synthesizer
+
+The opposite of psychoacoustic bass: an octave divider in the style of the dbx 120A that adds a real fundamental an
+octave below the program's bass, for a system that can play it (firmware 1.1.6 beta 4 or later). Three program
+bands (48 to 72, 72 to 112 and 112 to 160 Hz) each drive their own divider, producing a sub at 24 to 36, 36 to 56
+and 56 to 80 Hz at its own level, followed by a gentle 70 Hz LF boost.
+
+- **Bands:** a graph shows the program bands, the subs synthesized from them, the boost and the ceiling. Each band
+  level runs from Off to +12 dB. **Apply preset** holds four starting points.
+- **Headroom cost:** the most the current setting can add, read from the device. Lower the preamp on the inputs
+  feeding the processed outputs by that much to stay clear of clipping.
+- **Selectivity:** All material, Percussive (a sub burst after each attack, for kicks) or Sustained (a sub once a
+  note has rung, for bass lines), with Depth and Hold.
+- **Sub ceiling:** a soft limit on the synthesized sub alone, from -40 dBFS to Off.
+- **Outputs:** the outputs it processes, each with a meter of the sub it carries, and Link output pairs (one sub per
+  pair from its mono sum, on by default).
+- **Solo** mutes the program on the processed outputs so the sub can be heard on its own. It is never saved and
+  switches off when the window closes.
+
+### Tube modeller
+
+Valve-style harmonic colour, supply sag and a tube amplifier's output stage (firmware 1.1.6 beta 4 or later).
+
+- **Basic** shows the selected tube, glowing while the modeller is on and brightening with the signal, a shelf of
+  sixteen tubes (preamp triodes, pentodes and power stages), Drive and Mix.
+- **Advanced** adds the transfer curve with the second and third harmonic of a full-scale sine, the tube picker,
+  Output Trim, the character controls each tube loads (bias, asymmetry, knee hardness, sag), the rectifier, and the
+  output stage (damping factor and speaker resonance). Editing a character control makes the tube Custom.
+- **Apply preset** holds five starting points, each setting every control apart from the character.
+
+The window remembers which mode it was left in.
+
 ### Stereo upmixer
 
 The upmixer derives centre and surround channels from a stereo source on RP2350 devices. Centre and surround
@@ -384,6 +416,8 @@ S/PDIF, I2S and ADAT, and the settings window provides a page for each:
 | Ctrl+Shift+L | Loudness compensation |
 | Ctrl+Shift+X | Crossfeed |
 | Ctrl+Shift+P | Psychoacoustic bass |
+| Ctrl+Shift+S | Subharmonic synthesizer |
+| Ctrl+Shift+D | Tube modeller |
 | Ctrl+Shift+U | Stereo upmixer |
 | Ctrl+Shift+V | Volume leveller |
 | Ctrl+Shift+G | Test signal generator |

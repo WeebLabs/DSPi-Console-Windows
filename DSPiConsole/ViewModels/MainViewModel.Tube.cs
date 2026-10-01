@@ -118,6 +118,14 @@ public partial class MainViewModel
         CheckDirty();
     }
 
+    /// <summary>A continuous tube value during a drag: device only, clamped as
+    /// the firmware does. The property commits it on release.</summary>
+    public void SendTubeParamLive(ushort index, float value, float min, float max)
+    {
+        float v = Math.Clamp(value, min, max);
+        DeviceWrite(() => _device.SetTubeParam(index, v));
+    }
+
     /// <summary>Toggle one output channel in the tube mask.</summary>
     public void SetTubeOutputChannel(int output, bool enabled)
     {

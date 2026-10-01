@@ -105,6 +105,29 @@ public partial class MainViewModel
         CheckDirty();
     }
 
+    /// <summary>A continuous subharm value during a drag: device only, clamped
+    /// as the firmware does. The property commits it on release.</summary>
+    public void SendSubharmLive(SubharmField field, float value)
+    {
+        (float lo, float hi, Func<float, bool> send) = field switch
+        {
+            SubharmField.Low => (SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb, v => _device.SetSubharmLow(v)),
+            SubharmField.High => (SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb, v => _device.SetSubharmHigh(v)),
+            SubharmField.Top => (SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb, v => _device.SetSubharmTop(v)),
+            SubharmField.Boost => (SubharmLimits.BoostMinDb, SubharmLimits.BoostMaxDb, v => _device.SetSubharmBoost(v)),
+            SubharmField.Depth => (SubharmLimits.DepthMinPct, SubharmLimits.DepthMaxPct, v => _device.SetSubharmSelectDepth(v)),
+            SubharmField.Hold => (SubharmLimits.HoldMinMs, SubharmLimits.HoldMaxMs, v => _device.SetSubharmSelectHold(v)),
+            _ => (SubharmLimits.CeilingMinDb, SubharmLimits.CeilingMaxDb, (Func<float, bool>)(v => _device.SetSubharmCeiling(v))),
+        };
+        float c = Math.Clamp(value, lo, hi);
+        DeviceWrite(() => send(c));
+    }
+
+    /// <summary>The synthesized sub's level per output, 0..1, or null. Blocking:
+    /// call off the UI thread.</summary>
+    public float[]? ReadSubharmMeter() =>
+        SubharmExtendedSupported ? _device.GetSubharmMeter(_device.NumOutputChannels) : null;
+
     /// <summary>Toggle one output channel in the subharm mask.</summary>
     public void SetSubharmOutputChannel(int output, bool enabled)
     {

@@ -12,6 +12,10 @@ public class AppSettings
         "DSPiConsole", "settings.json");
 
     public bool ShowGraphGlow { get; set; } = true;
+
+    /// <summary>The Tube Modeller window shows every control (Advanced) rather
+    /// than the tube, drive and mix (Basic).</summary>
+    public bool TubeModellerAdvanced { get; set; }
     public double GraphLineWidth { get; set; } = 2.0;
     public double GraphAnimationSpeed { get; set; } = 0.2;
     public bool ShowDebugInfo { get; set; }
