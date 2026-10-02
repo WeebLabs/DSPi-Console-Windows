@@ -660,7 +660,7 @@ Work items:
 
 **Main window**
 - CPU meters: show C0 and C1.
-- Dashboard card layout gear: Auto / 1 / 2 / 3.
+- Dashboard card layout gear: Auto / 1 / 2 / 3. **Done 2026-10-03** (ahead of the rest of Phase 8; `Controls/DashboardGrid.cs`, `MainWindow.DashboardLayout.cs`).
 - Dashboard type codes: HC/LC with a first-order suffix, and Q shown only for PK.
 - Put the connection error in a tooltip.
 - Alt-click renames a channel.

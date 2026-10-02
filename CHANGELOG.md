@@ -2,6 +2,9 @@
 
 ## 2026-10-03
 
+### Dashboard layout
+- The dashboard lays its cards out in rows, using the width of a wide window: Auto fits as many cards per row as the window allows, or choose 1, 2 or 3 from the gear that appears in a card's corner on hover; the choice is remembered
+
 ### Control Surfaces
 - Auxiliary outputs: a page of their own under Control for GPIOs the DSPi switches or dims for something it knows nothing about (an amplifier trigger, a speaker relay, a panel lamp, a fan). Each output has a live switch (and, dimmable, a level) that acts at once without touching flash, its pin and sense, a level limit and linear response for dimmable ones, turn-on and turn-off delays, its power-on state (fixed, or as last saved), and a list of the controls, remote keys and macros that drive it
 - Controls, remote keys, macro steps and display pages can drive an aux output through Aux Switch and Aux Level, picking the output by name

@@ -770,6 +770,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        DashboardPanel.CardsPerRow = Math.Clamp(AppSettings.Instance.DashboardCardsPerRow, 0, 3);
         foreach (var (key, card, texts) in BuildDashboardCards())
         {
             card.Tag = key;
@@ -849,13 +850,13 @@ public sealed partial class MainWindow : Window
             {
                 var (left, right) = (inputs[i], inputs[i + 1]);
                 cards.Add(($"in-{left.ShortName}-{right.ShortName}",
-                    CreateStereoDashboardCard(left, right, false, texts), texts));
+                    WithLayoutGear(CreateStereoDashboardCard(left, right, false, texts)), texts));
             }
             else
             {
                 // Odd input count (a source reporting an unpaired channel).
                 cards.Add(($"in-{inputs[i].ShortName}",
-                    CreateMonoDashboardCard(inputs[i], false, texts), texts));
+                    WithLayoutGear(CreateMonoDashboardCard(inputs[i], false, texts)), texts));
             }
         }
 
@@ -879,12 +880,12 @@ public sealed partial class MainWindow : Window
             {
                 var (left, right) = (outputs[o], outputs[o + 1]);
                 cards.Add(($"{left.ShortName}-{right.ShortName}",
-                    CreateStereoDashboardCard(left, right, true, texts), texts));
+                    WithLayoutGear(CreateStereoDashboardCard(left, right, true, texts)), texts));
                 o++; // partner consumed
             }
             else
             {
-                cards.Add((outputs[o].ShortName, CreateMonoDashboardCard(outputs[o], true, texts), texts));
+                cards.Add((outputs[o].ShortName, WithLayoutGear(CreateMonoDashboardCard(outputs[o], true, texts)), texts));
             }
         }
 
@@ -933,7 +934,7 @@ public sealed partial class MainWindow : Window
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         headerGrid.Children.Add(CreateChannelHeader(left, showDelay, 0, texts));
-        headerGrid.Children.Add(CreateChannelHeader(right, showDelay, 1, texts));
+        headerGrid.Children.Add(CreateChannelHeader(right, showDelay, 1, texts, reserveGear: true));
 
         mainStack.Children.Add(headerGrid);
         mainStack.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(51, 128, 128, 128)) });
@@ -962,12 +963,14 @@ public sealed partial class MainWindow : Window
         return card;
     }
 
-    private Border CreateChannelHeader(Channel channel, bool showDelay, int column, DashboardCardTexts texts)
+    /// <summary>One channel's header strip. The card's last one keeps its right
+    /// edge clear for the layout gear that appears there on hover.</summary>
+    private Border CreateChannelHeader(Channel channel, bool showDelay, int column, DashboardCardTexts texts, bool reserveGear = false)
     {
         var header = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(102, 38, 38, 38)),
-            Padding = new Thickness(8)
+            Padding = new Thickness(8, 8, reserveGear ? 30 : 8, 8)
         };
         Grid.SetColumn(header, column);
 
@@ -1165,7 +1168,7 @@ public sealed partial class MainWindow : Window
         };
 
         var stack = new StackPanel();
-        stack.Children.Add(CreateChannelHeader(channel, showDelay, 0, texts));
+        stack.Children.Add(CreateChannelHeader(channel, showDelay, 0, texts, reserveGear: true));
         stack.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(51, channel.Color.R, channel.Color.G, channel.Color.B)) });
         stack.Children.Add(CreateDashboardFilterList(channel));
 

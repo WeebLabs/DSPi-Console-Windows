@@ -393,6 +393,12 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **System Statistics** (`StatsWindow.cs`, 980 x 620): columns of 16 px padding, section labels 10 bold secondary; counters coloured once nonzero (overruns #FF9F0A, underruns #FF453A); buffer rows 48 px with a `Controls/BufferFillTrace.cs` trace (256 samples, watermark band at 14 %, dashed 50 % guide, 1.25 px trace, PDM ring dashed); third column only when an optional input or interface applies; footer with a connection dot and "Updated every 2 seconds"
 - **Interrupt Monitor** (`InterruptMonitorWindow.cs`, 900 x 560): toolbar with Pause/Resume (Ctrl+P), Clear (Ctrl+K), Auto-scroll, Show IDLE, Show raw bytes, and at the right the state (Listening #30D158, Paused #FF9F0A, Inactive secondary) and event count; the log in Cascadia Code 11 pt, selectable, no wrap; footer with packet and hidden-IDLE counts; decode in `DSPiConsole.Core/NotifyDecoder.cs`
 
+## Dashboard layout (Controls/DashboardGrid.cs, MainWindow.DashboardLayout.cs)
+
+- `DashboardGrid` replaces the dashboard StackPanel: equal-width columns, 16 px gaps, each row as tall as its tallest card; Auto = floor((width + 16) / (500 + 16)) columns, never more than there are cards; fixed 1-3 from `AppSettings.DashboardCardsPerRow` (0 = Auto)
+- Gear: 11 pt E713 over each card's top-right corner (5 px down, 6 px in), opacity 0 until the card is hovered or its flyout is open; tooltip "Dashboard layout"
+- Flyout (220 px): "DASHBOARD LAYOUT" 10 pt bold secondary; four 38 px tiles (Auto with a left-right arrow glyph, then 1/2/3 drawn as two rows of cells), selected tile accent at 16 % fill and 70 % border; a 10 pt line "Fits as many cards per row as the window allows." / "Up to n cards per row."
+
 ## Control Surfaces: aux outputs and catch-up (ControlSurfacesPanel.Aux.cs)
 
 - Settings › Control › Auxiliary Outputs (`ControlAuxPage`, order 50): the binding section of `ControlSurfacesPanel` with `CsSection.Aux`, showing only aux slots (the Control Surfaces page shows the rest); Add Output menu (On/Off Output, Dimmable Output), empty state "No auxiliary outputs set up", 11 pt secondary explanatory footer

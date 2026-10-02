@@ -34,6 +34,8 @@ public class AppSettings
     /// the spectrum on one.</summary>
     public bool RtaChannelPagesShowSpectrum { get; set; } = true;
     public int RtaBarColumns { get; set; } = 2;
+    /// <summary>Dashboard cards per row; 0 fits as many as the window allows.</summary>
+    public int DashboardCardsPerRow { get; set; }
     public double RtaBarHeight { get; set; } = 96;
     public double RtaGraphOpacity { get; set; } = 1.0;
     public double RtaFloorDb { get; set; } = -90;

@@ -571,14 +571,16 @@
 
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden">
                         <Grid>
-                            <StackPanel x:Name="DashboardPanel" Spacing="16">
-                                <StackPanel.ChildrenTransitions>
+                            <!-- Cards in rows: as many as fit, or the count chosen
+                                 from a card's layout gear (MainWindow.DashboardLayout.cs). -->
+                            <controls:DashboardGrid x:Name="DashboardPanel" Spacing="16">
+                                <controls:DashboardGrid.ChildrenTransitions>
                                     <TransitionCollection>
                                         <AddDeleteThemeTransition />
                                         <RepositionThemeTransition />
                                     </TransitionCollection>
-                                </StackPanel.ChildrenTransitions>
-                            </StackPanel>
+                                </controls:DashboardGrid.ChildrenTransitions>
+                            </controls:DashboardGrid>
                             <StackPanel x:Name="ChannelEditorPanel" Visibility="Collapsed"
                                         Spacing="12" />
                         </Grid>
