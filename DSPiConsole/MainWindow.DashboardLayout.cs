@@ -25,14 +25,19 @@ public sealed partial class MainWindow
         host.Children.Add(card);
         var gear = new Button
         {
-            Content = new FontIcon { Glyph = "", FontSize = 11 },
+            Content = new FontIcon
+            {
+                Glyph = "", FontSize = 11,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            },
             Padding = new Thickness(4, 3, 4, 3),
             MinWidth = 0, MinHeight = 0,
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 5, 6, 0),
+            // The glyph sits 8 px from both the top and the right edge.
+            Margin = new Thickness(0, 5, 4, 0),
             Opacity = 0,
             IsHitTestVisible = false,
             IsTabStop = false,
