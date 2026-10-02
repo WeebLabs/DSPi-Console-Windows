@@ -2,6 +2,9 @@
 
 ## 2026-10-03
 
+### Menu
+- The main menu gathers Loudness Compensation, Crossfeed, Psychoacoustic Bass, Subharmonic Synthesizer, Tube Modeller, Stereo Upmixer and Volume Leveller into an Effects submenu; their shortcuts are unchanged
+
 ### Channel pages
 - In the band list, gain now comes before Q, as on the macOS Console
 - The filter type menu groups the shelves, cuts and all-pass into submenus by slope (6 or 12 dB/oct; all-pass 180 or 360 degrees)
