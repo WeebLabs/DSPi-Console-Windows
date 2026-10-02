@@ -7,7 +7,8 @@
     <!--
         The control-surfaces editor body, hosted by three Settings pages (Control
         Surfaces, Channel Groups, Macros). Each page builds one instance and sets
-        Section, which decides who is visible; the rest of the tree stays in this
+        Section, which decides who is visible (Auxiliary Outputs shares the
+        Bindings tree, showing only the slots that hold an aux output); the rest of the tree stays in this
         one file so the three sections keep sharing the card builders and the caps
         gate. Persisting to flash isn't here: edits preview live on the device and
         the settings window's pending-changes prompt writes them, exactly as it
@@ -41,11 +42,11 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                         CornerRadius="8" Padding="24,32">
                     <StackPanel Spacing="6" HorizontalAlignment="Center">
-                        <FontIcon Glyph="&#xE9E9;" FontSize="28" HorizontalAlignment="Center"
+                        <FontIcon x:Name="EmptyGlyph" Glyph="&#xE9E9;" FontSize="28" HorizontalAlignment="Center"
                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
-                        <TextBlock Text="No controls yet" FontWeight="SemiBold" FontSize="14"
+                        <TextBlock x:Name="EmptyTitle" Text="No controls yet" FontWeight="SemiBold" FontSize="14"
                                    HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                        <TextBlock Text="Add a button, knob, switch, encoder, LED, IR receiver or display to get started."
+                        <TextBlock x:Name="EmptyText" Text="Add a button, knob, switch, encoder, LED, IR receiver or display to get started."
                                    FontSize="12" TextWrapping="Wrap" TextAlignment="Center"
                                    HorizontalAlignment="Center" MaxWidth="320"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -59,12 +60,18 @@
                 <DropDownButton x:Name="AddButton" HorizontalAlignment="Left">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE710;" FontSize="13" VerticalAlignment="Center"/>
-                        <TextBlock Text="Add Control" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AddButtonText" Text="Add Control" VerticalAlignment="Center"/>
                     </StackPanel>
                     <DropDownButton.Flyout>
                         <MenuFlyout x:Name="AddFlyout"/>
                     </DropDownButton.Flyout>
                 </DropDownButton>
+                <TextBlock x:Name="SlotsFullText" Visibility="Collapsed" FontSize="11"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                <!-- What the section is for, under its cards (Auxiliary Outputs). -->
+                <TextBlock x:Name="SectionFooter" Visibility="Collapsed" FontSize="11" TextWrapping="Wrap"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
 
             <!-- Channel groups (caps v9): one control drives a set of channels -->

@@ -60,6 +60,7 @@ public sealed partial class ControlSurfacesPanel
     private readonly Dictionary<int, Action> _groupChannelRelabel = new();
     // Host for each group card's member list, refilled in place on a kind change.
     private readonly Dictionary<int, ContentControl> _groupMemberHosts = new();
+    private readonly Dictionary<int, TextBlock> _groupUsedBy = new();
     private readonly Dictionary<int, TextBox> _groupNameBoxes = new();
     private readonly Dictionary<int, ComboBox> _groupKindCombos = new();
 
@@ -153,6 +154,7 @@ public sealed partial class ControlSurfacesPanel
             _groupApply.Clear();
             _groupChannelRelabel.Clear();
             _groupMemberHosts.Clear();
+            _groupUsedBy.Clear();
             _groupNameBoxes.Clear();
             _groupKindCombos.Clear();
             for (int i = 0; i < _vm.CsGroupMax; i++)
@@ -198,6 +200,7 @@ public sealed partial class ControlSurfacesPanel
         _groupApply.Remove(idx);
         _groupChannelRelabel.Remove(idx);
         _groupMemberHosts.Remove(idx);
+        _groupUsedBy.Remove(idx);
         _groupNameBoxes.Remove(idx);
         _groupKindCombos.Remove(idx);
         UpdateGroupsChrome();
@@ -272,6 +275,10 @@ public sealed partial class ControlSurfacesPanel
         _groupMemberHosts[idx] = memberHost;
         body.Children.Add(memberHost);
         PopulateGroupMembers(idx);
+
+        var usedBy = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = SecondaryBrush };
+        _groupUsedBy[idx] = usedBy;
+        body.Children.Add(usedBy);
 
         body.Children.Add(BuildGroupApplyRow(idx));
         expander.Content = body;
@@ -899,6 +906,8 @@ public sealed partial class ControlSurfacesPanel
                 var acts = nd2 != null ? MacroStepActions(nd2) : new List<CsAction>();
                 s.Action = acts.Count > 0 ? (byte)acts[0] : (byte)0;
                 s.Value = 0; s.Step = 0; s.Target = 0; s.Index = 0;
+                if (nd2?.TargetKind == CsTarget.Aux && TargetChoices(noun, nd2) is { Count: > 0 } aux)
+                    s.Target = (byte)aux[0];
                 // The group reference and the wrap bit both belong to the old
                 // noun's channel space and value kind.
                 s.Flags &= ~(CsFlags.Group | CsFlags.Wrap);
@@ -960,13 +969,7 @@ public sealed partial class ControlSurfacesPanel
 
         var groups = CompatibleGroups(nd).ToList();
         var combo = new ComboBox { MinWidth = 180 };
-        for (int i = 0; i < nd.TargetCount; i++)
-            combo.Items.Add(new ComboBoxItem { Content = ChannelLabel(nd.TargetKind, i), Tag = i });
-        foreach (int g in groups)
-            combo.Items.Add(new ComboBoxItem { Content = $"Group: {_vm.CsGroupLabel(g)}", Tag = new GroupTag(g) });
-        combo.SelectedIndex = draft.IsGrouped
-            ? (groups.IndexOf(draft.Target) is var gi && gi >= 0 ? nd.TargetCount + gi : -1)
-            : (draft.Target < nd.TargetCount ? draft.Target : 0);
+        FillTargetCombo(combo, draft.Noun, nd, groups, draft.IsGrouped, draft.Target);
         combo.SelectionChanged += (_, _) =>
         {
             if (_building) return;
@@ -976,7 +979,9 @@ public sealed partial class ControlSurfacesPanel
             else if (it.Tag is GroupTag g) { s.Flags |= CsFlags.Group; s.Target = (byte)g.Index; }
             RefreshGroupMacroIndicators();
         };
-        panel.Children.Add(Row(groups.Count > 0 ? "Target" : "Channel", combo));
+        panel.Children.Add(Row(TargetRowLabel(nd, groups.Count > 0), combo));
+        if (nd.TargetKind == CsTarget.Aux && combo.Items.Count == 0)
+            panel.Children.Add(AuxTargetHint(draft.Noun));
 
         if (nd.HasBand)
         {
@@ -1415,6 +1420,16 @@ public sealed partial class ControlSurfacesPanel
         {
             labels.Title.Text = GroupTitle(idx);
             labels.Summary.Text = GroupSummary(idx);
+        }
+        foreach (var (idx, usedBy) in _groupUsedBy)
+        {
+            // Live controls only: what an edit to this group would deactivate.
+            int n = 0;
+            for (int s = 0; s < Math.Min(_vm.CsSlotCount, _vm.CsBindings.Count); s++)
+                if (_vm.CsBindings[s] is { IsConfigured: true, IsGrouped: true } b && b.Target == idx) n++;
+            usedBy.Text = $"Used by {n} control{(n == 1 ? "" : "s")}. Emptying this group or changing its channel "
+                        + "type deactivates them until it fits again.";
+            usedBy.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         foreach (var (idx, apply) in _groupApply)
         {

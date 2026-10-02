@@ -409,6 +409,7 @@ public sealed partial class SettingsShell : UserControl
     private static string PageForCsKey(string key) =>
         key.StartsWith("cs.group") ? "control.groups"
         : key.StartsWith("cs.macro") ? "control.macros"
+        : key.StartsWith("cs.aux") ? "control.aux"
         : "control.surfaces";   // cs.slot.* / cs.ir.*
 
     /// <summary>

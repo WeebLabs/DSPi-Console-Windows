@@ -24,7 +24,7 @@ namespace DSPiConsole;
 /// instance shows. The three Settings pages under Control each build one panel
 /// with a different value; everything else about them is identical.
 /// </summary>
-public enum CsSection { Bindings, Groups, Macros }
+public enum CsSection { Bindings, Groups, Macros, Aux }
 
 /// <summary>
 /// Control Surfaces + IR remote editor. A caps-driven editor that binds physical
@@ -133,7 +133,17 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
 
     // Subscribed before any panel's own handler, so a panel that IS mounted sees
     // the bumped count when it records _seenGeneration.
-    private static void BumpGeneration() => s_reloadGeneration++;
+    private static void BumpGeneration()
+    {
+        s_reloadGeneration++;
+        // A reload reseeds every page, so nothing is staged any more.
+        s_claimedSlots.Clear();
+    }
+
+    /// <summary>Slots a binding page has added a control to that the device
+    /// does not hold yet (an Add the firmware refused, say). Shared, so the
+    /// other binding page never adds into the same slot.</summary>
+    private static readonly HashSet<int> s_claimedSlots = new();
 
     // Editable drafts (seeded from the VM's live values). A slot is "dirty" when
     // its draft differs from the applied device state.
@@ -151,6 +161,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     // Per-slot / per-sub UI handles refreshed without a full rebuild.
     private readonly Dictionary<int, (Border Pill, Ellipse Dot, TextBlock Label)> _slotPills = new();
     private readonly Dictionary<int, TextBlock> _slotTitles = new();
+    private readonly Dictionary<int, (Border Badge, FontIcon Icon)> _slotBadges = new();
     private readonly Dictionary<int, TextBlock> _slotSummaries = new();
     private readonly Dictionary<int, Button> _slotApply = new();
     private readonly Dictionary<int, StackPanel> _slotBodies = new();
@@ -214,6 +225,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         _vm.ChannelNameChanged += OnChannelNameChanged;
         StateChanged -= OnSiblingStateChanged;
         StateChanged += OnSiblingStateChanged;
+        _vm.CsAuxChanged -= OnAuxChanged;
+        _vm.CsAuxChanged += OnAuxChanged;
+        _vm.CsBindingsReread -= OnBindingsReread;
+        _vm.CsBindingsReread += OnBindingsReread;
 
         // Catch up on anything that happened while we were detached.
         if (_seenGeneration != s_reloadGeneration)
@@ -230,6 +245,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             // it is shown again.
             if (_seenStateGeneration != s_stateGeneration) RefreshForSiblingState();
             RefreshStatusIndicators();
+            // The aux page is not told about live aux changes while detached.
+            if (_section == CsSection.Aux && _vm.IsDeviceConnected) _ = Task.Run(_vm.RefreshCsAux);
         }
     }
 
@@ -241,6 +258,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         _vm.ControlSurfacesReloaded -= OnReloaded;
         _vm.ChannelNameChanged -= OnChannelNameChanged;
         StateChanged -= OnSiblingStateChanged;
+        _vm.CsAuxChanged -= OnAuxChanged;
+        _vm.CsBindingsReread -= OnBindingsReread;
     }
 
     /// <summary>Another section changed something this one displays. Refresh in
@@ -261,7 +280,15 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private void RefreshForSiblingState()
     {
         _seenStateGeneration = s_stateGeneration;
-        if (_section == CsSection.Bindings) RefreshGroupedBindingCards();
+        if (_section is CsSection.Bindings or CsSection.Aux)
+        {
+            // The other binding page may have added, changed or removed a slot
+            // this one does not show; its draft here has to follow, or the next
+            // Add would pick that slot again.
+            ReseedForeignSlots();
+            RefreshGroupedBindingCards();
+            RefreshAuxDrivenBy();
+        }
         else if (_section == CsSection.Macros) RefreshMacroStepCards();
         else RefreshGroupMacroIndicators();
     }
@@ -321,9 +348,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         // Only this panel's section is built. The others stay collapsed and their
         // card dictionaries stay empty — every refresh path already skips slots it
         // has no card for, so they no-op rather than misbehave.
-        BindingsSection.Visibility = Vis(_section == CsSection.Bindings);
-        if (_section == CsSection.Bindings)
+        BindingsSection.Visibility = Vis(_section is CsSection.Bindings or CsSection.Aux);
+        if (_section is CsSection.Bindings or CsSection.Aux)
         {
+            ApplySectionText();
             BuildAddMenu();
             RebuildCards();
         }
@@ -356,6 +384,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         {
             if (t == CsType.None) continue;
             if ((int)t >= caps.TypeCount) continue;
+            // Aux outputs have a page of their own, and only them.
+            if (IsAuxType(t) != (_section == CsSection.Aux)) continue;
             // One IR receiver max — hide once configured.
             if (t == CsType.Ir && (!_vm.CsIrSupported || AnyIrReceiver())) continue;
             // One display per device, likewise (CS_STATUS_DISPLAY_IN_USE).
@@ -369,7 +399,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             item.Click += (_, _) => AddControl(t);
             AddFlyout.Items.Add(item);
         }
-        AddButton.IsEnabled = FirstFreeSlot() >= 0 && AddFlyout.Items.Count > 0;
+        bool full = FirstFreeSlot() < 0;
+        AddButton.IsEnabled = !full && AddFlyout.Items.Count > 0 && _vm.IsDeviceConnected;
+        SlotsFullText.Text = $"All {_vm.CsSlotCount} control slots are in use.";
+        SlotsFullText.Visibility = Vis(full);
     }
 
     private void RebuildCards()
@@ -380,6 +413,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             CardsPanel.Children.Clear();
             _slotPills.Clear();
             _slotTitles.Clear();
+            _slotBadges.Clear();
             _slotSummaries.Clear();
             _slotApply.Clear();
             _slotBodies.Clear();
@@ -395,7 +429,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             int shown = 0;
             for (int slot = 0; slot < _vm.CsSlotCount; slot++)
             {
-                if (!_drafts[slot].IsConfigured) continue;
+                if (!ShowsSlot(slot)) continue;
                 CardsPanel.Children.Add(BuildSlotCard(slot));
                 shown++;
             }
@@ -439,26 +473,37 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        // Tinted type-icon badge.
-        var accent = TypeColor(draft.Type);
+        // Tinted type-icon badge, which is also the menu that changes the type.
+        var icon = new FontIcon
+        {
+            FontSize = 16,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         var badge = new Border
         {
             Width = 34,
             Height = 34,
             CornerRadius = new CornerRadius(8),
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Color.FromArgb(0x2A, accent.R, accent.G, accent.B)),
-            Child = new FontIcon
-            {
-                Glyph = TypeGlyph(draft.Type),
-                FontSize = 16,
-                Foreground = new SolidColorBrush(accent),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
+            Child = icon,
         };
-        Grid.SetColumn(badge, 0);
-        grid.Children.Add(badge);
+        _slotBadges[slot] = (badge, icon);
+        PaintBadge(slot);
+        var badgeButton = new Button
+        {
+            Content = badge,
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(Colors.Transparent),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(badgeButton, "Change the component type");
+        var typeMenu = new MenuFlyout();
+        // Built as it opens: which types may be offered depends on the other slots.
+        typeMenu.Opening += (_, _) => FillTypeMenu(typeMenu, slot);
+        badgeButton.Flyout = typeMenu;
+        Grid.SetColumn(badgeButton, 0);
+        grid.Children.Add(badgeButton);
 
         // Title (custom name or type) + live binding summary.
         var titleStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
@@ -561,6 +606,12 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
                 // shows (config + pages), which apply as they are edited.
                 PopulateDisplayBody(slot, panel);
             }
+            else if (draft.IsAux)
+            {
+                // A container too: the output's live switch, then its pin, sense,
+                // timing and power-on behaviour, then what drives it.
+                PopulateAuxBody(slot, panel);
+            }
             else
             {
                 var nd = _vm.CsNounDescFor(draft.Noun);
@@ -576,7 +627,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
                     var operand = BuildOperandRows(slot, nd);
                     if (operand != null) panel.Children.Add(operand);
                     if (SupportsIndicatorDelay(draft))
-                        panel.Children.Add(BuildIndicatorDelayRows(slot));
+                        panel.Children.Add(BuildDelayRows(slot));
                     // The ceiling scales whatever duty the action worked out, so
                     // it belongs to the LED rather than to any one action.
                     if (_vm.CsLedBrightnessSupported && draft.Type == CsType.LedPwm)
@@ -620,24 +671,57 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private FrameworkElement BuildNounRow(int slot)
     {
         var draft = _drafts[slot];
-        var combo = new ComboBox { MinWidth = 220 };
-        var caps = _vm.CsCaps!;
-        int selectedIndex = -1, idx = 0;
-        foreach (var (noun, nd) in AvailableNouns(draft.Type))
+        var button = NounMenuButton(AvailableNouns(draft.Type).Select(n => n.noun), draft.Type, draft.Noun,
+            noun => ChangeNoun(slot, noun));
+        ToolTipService.SetToolTip(button, "The device function this control drives.");
+        return Row("Controls", button);
+    }
+
+    /// <summary>The function menu: one submenu per family, in the macOS
+    /// Console's order, or a flat list when only one family has anything for
+    /// this kind of control. The button reads the chosen function's full name.</summary>
+    private DropDownButton NounMenuButton(IEnumerable<int> nouns, CsType type, int current, Action<int> pick)
+    {
+        var available = nouns.ToHashSet();
+        var families = CsNounInfo.Categories
+            .Select(c => (Category: (CsNounInfo.Category?)c, Nouns: c.Nouns.Select(n => (int)n).Where(available.Contains).ToList()))
+            .Where(f => f.Nouns.Count > 0)
+            .ToList();
+        var listed = families.SelectMany(f => f.Nouns).ToHashSet();
+        var other = available.Where(n => !listed.Contains(n)).OrderBy(n => n).ToList();
+        if (other.Count > 0) families.Add((null, other));
+
+        var flyout = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        MenuFlyoutItemBase Item(int noun, CsNounInfo.Category? family)
         {
-            var item = new ComboBoxItem { Content = CsNounInfo.Name(noun), Tag = noun };
-            combo.Items.Add(item);
-            if (noun == draft.Noun) selectedIndex = idx;
-            idx++;
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text = family == null ? CsNounInfo.Name(noun, type) : CsNounInfo.MenuLabel(noun, type, family),
+                IsChecked = noun == current,
+            };
+            item.Click += (_, _) => { if (noun != current) pick(noun); else item.IsChecked = true; };
+            return item;
         }
-        combo.SelectedIndex = selectedIndex;
-        combo.SelectionChanged += (_, _) =>
+        if (families.Count <= 1)
         {
-            if (_building) return;
-            if (combo.SelectedItem is ComboBoxItem it && it.Tag is int noun)
-                ChangeNoun(slot, noun);
+            foreach (int noun in families.SelectMany(f => f.Nouns)) flyout.Items.Add(Item(noun, null));
+        }
+        else
+        {
+            foreach (var (family, members) in families)
+            {
+                var sub = new MenuFlyoutSubItem { Text = family?.Title ?? "Other" };
+                foreach (int noun in members) sub.Items.Add(Item(noun, family));
+                flyout.Items.Add(sub);
+            }
+        }
+        return new DropDownButton
+        {
+            Content = available.Contains(current) ? CsNounInfo.Name(current, type) : "Choose a function",
+            MinWidth = 220,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Flyout = flyout,
         };
-        return Row("Controls", combo);
     }
 
     private FrameworkElement BuildActionRow(int slot, List<CsAction> actions)
@@ -671,14 +755,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         // channel clears it along with the two group-only modifiers.
         var groups = CompatibleGroups(nd).ToList();
         var chCombo = new ComboBox { MinWidth = 180 };
-        for (int i = 0; i < nd.TargetCount; i++)
-            chCombo.Items.Add(new ComboBoxItem { Content = ChannelLabel(nd.TargetKind, i), Tag = i });
-        foreach (int g in groups)
-            chCombo.Items.Add(new ComboBoxItem { Content = $"Group: {_vm.CsGroupLabel(g)}", Tag = new GroupTag(g) });
+        FillTargetCombo(chCombo, draft.Noun, nd, groups, draft.IsGrouped, draft.Target);
         _channelRelabel[slot] = () => Relabel(chCombo, nd.TargetKind);
-        chCombo.SelectedIndex = draft.IsGrouped
-            ? (groups.IndexOf(draft.Target) is var gi && gi >= 0 ? nd.TargetCount + gi : -1)
-            : (draft.Target < nd.TargetCount ? draft.Target : 0);
         chCombo.SelectionChanged += (_, _) =>
         {
             if (_building) return;
@@ -701,7 +779,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             if (wasGrouped != _drafts[slot].IsGrouped) PopulateSlotBody(slot);
             else RefreshStatusIndicators();
         };
-        panel.Children.Add(Row(groups.Count > 0 ? "Target" : "Channel", chCombo));
+        panel.Children.Add(Row(TargetRowLabel(nd, groups.Count > 0), chCombo));
+        if (nd.TargetKind == CsTarget.Aux && chCombo.Items.Count == 0)
+            panel.Children.Add(AuxTargetHint(draft.Noun));
 
         if (nd.HasBand)
         {
@@ -948,37 +1028,56 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         return panel;
     }
 
-    /// <summary>Indicator condition timing (caps v8): the condition must hold for
-    /// the on-delay before the LED lights and for the off-delay before it goes out.
-    /// LED types with IND_EQUALS / IND_ABOVE only — the firmware rejects a non-zero
-    /// delay anywhere else. Wire units are 0.1 s; the fields are in seconds.</summary>
-    private FrameworkElement BuildIndicatorDelayRows(int slot)
+    /// <summary>Turn-on and turn-off delays (caps v8 for LED indicators, caps
+    /// v18 for aux outputs): the condition must hold this long before the
+    /// output follows it. Entered as minutes and seconds; the wire counts 0.1 s
+    /// in a uint16, so the most is 109 min 13 s, and tenths set elsewhere show
+    /// truncated. Seconds past 59 are accepted and carried into minutes.</summary>
+    private FrameworkElement BuildDelayRows(int slot)
     {
-        var draft = _drafts[slot];
         var panel = new StackPanel { Spacing = 8 };
+        int max = (int)(ushort.MaxValue * CsLimits.IndicatorDelayUnitSeconds);
+        string limit = $" Up to {max / 60} min {max % 60} s.";
+        TextBlock caveat = null!;
 
-        // 0.1 s units in a uint16, so the field clamps at 0..6553.5 s; echo the
-        // stored value back rather than leave an out-of-range number on screen.
-        TextBox onBox = null!, offBox = null!;
-        onBox = NumberField(draft.OnDelay * CsLimits.IndicatorDelayUnitSeconds, CsUnit.None, v =>
+        FrameworkElement Fields(Func<ushort> read, Action<ushort> write, string tip)
         {
-            _drafts[slot].OnDelay = EncodeIndicatorDelay(v);
-            double stored = _drafts[slot].OnDelay * CsLimits.IndicatorDelayUnitSeconds;
-            if (Math.Abs(stored - v) > 0.005) onBox.Text = FormatNumber(stored);
-            RefreshStatusIndicators();
-        });
-        offBox = NumberField(draft.OffDelay * CsLimits.IndicatorDelayUnitSeconds, CsUnit.None, v =>
-        {
-            _drafts[slot].OffDelay = EncodeIndicatorDelay(v);
-            double stored = _drafts[slot].OffDelay * CsLimits.IndicatorDelayUnitSeconds;
-            if (Math.Abs(stored - v) > 0.005) offBox.Text = FormatNumber(stored);
-            RefreshStatusIndicators();
-        });
-        ToolTipService.SetToolTip(onBox, "Hold the condition this long before lighting (0 = immediate)");
-        ToolTipService.SetToolTip(offBox, "Hold the condition false this long before going out (0 = immediate)");
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            TextBox minutes = null!, seconds = null!;
+            int Total() => (int)(read() * CsLimits.IndicatorDelayUnitSeconds);
+            void Store(int totalSeconds)
+            {
+                write(EncodeIndicatorDelay(Math.Clamp(totalSeconds, 0, max)));
+                minutes.Text = (Total() / 60).ToString(CultureInfo.InvariantCulture);
+                seconds.Text = (Total() % 60).ToString(CultureInfo.InvariantCulture);
+                caveat.Visibility = Vis(_drafts[slot].OnDelay != 0 || _drafts[slot].OffDelay != 0);
+                RefreshStatusIndicators();
+            }
+            minutes = NumberField(Total() / 60, CsUnit.None, v => Store((int)Math.Round(v) * 60 + Total() % 60));
+            seconds = NumberField(Total() % 60, CsUnit.None, v => Store(Total() / 60 * 60 + (int)Math.Round(v)));
+            minutes.MinWidth = 56;
+            seconds.MinWidth = 56;
+            ToolTipService.SetToolTip(minutes, tip + limit);
+            ToolTipService.SetToolTip(seconds, tip + limit);
+            row.Children.Add(minutes);
+            row.Children.Add(new TextBlock { Text = "min", FontSize = 11, Foreground = SecondaryBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+            row.Children.Add(seconds);
+            row.Children.Add(new TextBlock { Text = "s", FontSize = 11, Foreground = SecondaryBrush, VerticalAlignment = VerticalAlignment.Center });
+            return row;
+        }
 
-        panel.Children.Add(Row("On delay (s)", onBox));
-        panel.Children.Add(Row("Off delay (s)", offBox));
+        panel.Children.Add(Row("Turn-on delay", Fields(() => _drafts[slot].OnDelay, v => _drafts[slot].OnDelay = v,
+            "Hold off until the condition has been true this long. Any interruption restarts the wait.")));
+        panel.Children.Add(Row("Turn-off delay", Fields(() => _drafts[slot].OffDelay, v => _drafts[slot].OffDelay = v,
+            "Stay on until the condition has been false this long: long enough to hold an amplifier trigger on through quiet passages.")));
+        caveat = new TextBlock
+        {
+            Text = "Applying, reverting, or rebooting briefly releases the pin and restarts the timing from off. "
+                 + "Driving an amplifier trigger, that is a power cycle.",
+            FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = SecondaryBrush,
+            Visibility = Vis(_drafts[slot].OnDelay != 0 || _drafts[slot].OffDelay != 0),
+        };
+        panel.Children.Add(caveat);
         return panel;
     }
 
@@ -1387,19 +1486,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private FrameworkElement BuildIrNounRow(int sub)
     {
         var draft = _irDrafts[sub];
-        var combo = new ComboBox { MinWidth = 200 };
-        int sel = -1, idx = 0;
-        foreach (var (noun, nd) in AvailableIrNouns())
+        var button = NounMenuButton(AvailableIrNouns().Select(n => n.noun), CsType.Ir, draft.Noun, noun =>
         {
-            combo.Items.Add(new ComboBoxItem { Content = CsNounInfo.Name(noun), Tag = noun });
-            if (noun == draft.Noun) sel = idx;
-            idx++;
-        }
-        combo.SelectedIndex = sel;
-        combo.SelectionChanged += (_, _) =>
-        {
-            if (_building) return;
-            if (combo.SelectedItem is ComboBoxItem it && it.Tag is int noun)
             {
                 _irDrafts[sub].Noun = (byte)noun;
                 var nd = _vm.CsNounDescFor(noun);
@@ -1409,11 +1497,14 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
                 _irDrafts[sub].Value = 0; _irDrafts[sub].Step = 0;
                 _irDrafts[sub].Target = 0; _irDrafts[sub].Index = 0;
                 _irDrafts[sub].Flags &= ~(CsFlags.Group | CsFlags.Wrap);
+                if (nd?.TargetKind == CsTarget.Aux && TargetChoices(noun, nd) is { Count: > 0 } aux)
+                    _irDrafts[sub].Target = (byte)aux[0];
                 SanitizeIrDraft(sub);
                 RefreshIrCommandCard(sub);
             }
-        };
-        return Row("Controls", combo);
+        });
+        ToolTipService.SetToolTip(button, "The device function this remote button drives.");
+        return Row("Controls", button);
     }
 
     private FrameworkElement BuildIrActionRow(int sub, List<CsAction> actions)
@@ -1448,14 +1539,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         // where grouped volume from a remote needed a macro fired per press.
         var groups = _vm.CsIrGroupsSupported ? CompatibleGroups(nd).ToList() : new List<int>();
         var chCombo = new ComboBox { MinWidth = 160 };
-        for (int i = 0; i < nd.TargetCount; i++)
-            chCombo.Items.Add(new ComboBoxItem { Content = ChannelLabel(nd.TargetKind, i), Tag = i });
-        foreach (int g in groups)
-            chCombo.Items.Add(new ComboBoxItem { Content = $"Group: {_vm.CsGroupLabel(g)}", Tag = new GroupTag(g) });
+        FillTargetCombo(chCombo, draft.Noun, nd, groups, draft.IsGrouped, draft.Target);
         _irChannelRelabel[sub] = () => Relabel(chCombo, nd.TargetKind);
-        chCombo.SelectedIndex = draft.IsGrouped
-            ? (groups.IndexOf(draft.Target) is var gi && gi >= 0 ? nd.TargetCount + gi : -1)
-            : (draft.Target < nd.TargetCount ? draft.Target : 0);
         chCombo.SelectionChanged += (_, _) =>
         {
             if (_building) return;
@@ -1472,7 +1557,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             }
             UpdateIrTitle(sub);
         };
-        panel.Children.Add(Row(groups.Count > 0 ? "Target" : "Channel", chCombo));
+        panel.Children.Add(Row(TargetRowLabel(nd, groups.Count > 0), chCombo));
+        if (nd.TargetKind == CsTarget.Aux && chCombo.Items.Count == 0)
+            panel.Children.Add(AuxTargetHint(draft.Noun));
 
         if (nd.HasBand)
         {
@@ -1557,6 +1644,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         _drafts[slot] = MakeDefaultBinding(type, slot);
         _nameEdits[slot] = "";
         _expanded.Add(slot);
+        s_claimedSlots.Add(slot);
         // Insert just the new card instead of rebuilding the panel, so existing
         // cards don't reload.
         InsertSlotCard(slot);
@@ -1572,7 +1660,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     {
         int index = 0;
         for (int s = 0; s < slot; s++)
-            if (_drafts[s].IsConfigured) index++;
+            if (ShowsSlot(s)) index++;
         CardsPanel.Children.Insert(index, BuildSlotCard(slot));
         EmptyHint.Visibility = Visibility.Collapsed;
     }
@@ -1588,6 +1676,13 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             if (!acts.Contains((CsAction)b.Action))
                 b.Action = acts.Count > 0 ? (byte)acts[0] : (byte)0;
             if (!b.IsGrouped && b.Target >= nd.TargetCount) b.Target = 0;
+            // An aux noun addresses a slot, not a channel: start on the first
+            // output it can drive rather than on whatever slot 0 holds.
+            if (nd.TargetKind == CsTarget.Aux)
+            {
+                var choices = TargetChoices(noun, nd);
+                if (!choices.Contains(b.Target)) b.Target = choices.Count > 0 ? (byte)choices[0] : (byte)0;
+            }
         }
         // Reset operands to defaults for the new noun.
         b.Value = 0; b.Step = 0; b.RangeMin = 0; b.RangeMax = 0;
@@ -1643,8 +1738,13 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         }
         if (!SupportsIndicatorDelay(b)) { b.OnDelay = 0; b.OffDelay = 0; }
         // The ceiling byte was reserved before caps v12 and is rejected on every
-        // component but a PWM LED, so it has to go with the type it belonged to.
-        if (b.Type != CsType.LedPwm || !_vm.CsLedBrightnessSupported) b.BaseBright = 0;
+        // component but a PWM LED or dimmable output, so it has to go with the
+        // type it belonged to.
+        if (!(b.Type == CsType.AuxPwm || (b.Type == CsType.LedPwm && _vm.CsLedBrightnessSupported))) b.BaseBright = 0;
+        // Extras are aux flags; the linear curve and a boot level only mean
+        // something on a dimmable output.
+        if (!b.IsAux) b.Extras = 0;
+        else if (b.Type == CsType.AuxOut) { b.Extras &= unchecked((byte)~CsAuxExtras.Linear); b.Value = 0; }
     }
 
     /// <summary>The IR-command counterpart of <see cref="SanitizeDraft"/>: a
@@ -1673,13 +1773,15 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     /// <summary>Whether this binding may carry <c>on_delay</c>/<c>off_delay</c>:
     /// an LED (plain or PWM) driving a boolean indicator condition.</summary>
     private static bool SupportsIndicatorDelay(CsBinding b) =>
-        b.Type is CsType.Led or CsType.LedPwm
-        && (CsAction)b.Action is CsAction.IndEquals or CsAction.IndAbove;
+        b.IsAux
+        || (b.Type is CsType.Led or CsType.LedPwm
+            && (CsAction)b.Action is CsAction.IndEquals or CsAction.IndAbove);
 
     private async void RemoveControl(int slot)
     {
         // Unapplied slot → just drop the local draft and its card. It never claimed a
         // pin (only live slots do), so no other card needs refreshing.
+        s_claimedSlots.Remove(slot);
         if (!_vm.CsBindings[slot].IsConfigured)
         {
             _drafts[slot] = CsBinding.Cleared();
@@ -1707,6 +1809,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         RefreshOtherSlotPins(slot);
         RefreshStatusIndicators();
         BuildAddMenu();
+        // The other binding page shows what pointed at this slot, and offers
+        // the slot as free again.
+        RaiseStateChanged();
     }
 
     /// <summary>Remove one slot's card element and drop its per-slot UI handles,
@@ -1719,6 +1824,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         _slotBodies.Remove(slot);
         _slotPills.Remove(slot);
         _slotTitles.Remove(slot);
+        _slotBadges.Remove(slot);
         _slotSummaries.Remove(slot);
         _slotApply.Remove(slot);
         _pinRefreshers.Remove(slot);
@@ -1746,6 +1852,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             _irTitles.Clear();
             _irChannelRelabel.Clear();
         }
+        RemoveAuxHandles(slot);
         if (CardsPanel.Children.Count == 0) EmptyHint.Visibility = Visibility.Visible;
     }
 
@@ -1761,6 +1868,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private void RevertSlot(int slot)
     {
         SeedDraftFrom(slot);
+        // The type may have been changed from the badge.
+        PaintBadge(slot);
+        BuildAddMenu();
         // Refill this card's body (the name box and every row come back from the
         // restored draft); its header and the other cards are untouched.
         PopulateSlotBody(slot);
@@ -1794,7 +1904,12 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         // reads back as an empty slot, which would blank the card and take the
         // message explaining the refusal with it — the display is the first
         // component strict enough to hit that often. A rejected draft stays put.
-        if (status == CsStatus.Success) SeedDraftFrom(slot);
+        if (status == CsStatus.Success)
+        {
+            SeedDraftFrom(slot);
+            // The device holds it now, which is what keeps it from the other page.
+            s_claimedSlots.Remove(slot);
+        }
         // Fully refresh only the applied card. Applying makes this slot live, so it now
         // claims its GPIO(s) — the other cards just need their pin lists refreshed in
         // place (not their whole bodies, which would flash their Apply buttons).
@@ -1863,6 +1978,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             _irDrafts[sub] = _vm.CsIrCommands[sub].Clone();
             UpdateIrCount();
             UpdateAddRemoteButtonState();
+            // The aux page counts the remote keys pointed at each output.
+            RaiseStateChanged();
         }
     }
 
@@ -1874,6 +1991,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         _irDrafts[sub] = _vm.CsIrCommands[sub].Clone();
         RefreshIrCommandCard(sub);
         UpdateIrCount();
+        RaiseStateChanged();
         if (status != CsStatus.Success) ShowToast(CsStatus.Message(status));
     }
 
@@ -1963,6 +2081,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             apply.IsEnabled = SlotDirty(slot) && _applyingSlot == null;
 
         RefreshGroupMacroIndicators();
+        // Whether an aux output's live switch works depends on its slot running.
+        RefreshAuxLive();
         // Nothing here reflects the flash-dirty state any more: the settings
         // window's pending-changes prompt owns that, fed by CsDirty.
     }
@@ -1995,8 +2115,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
 
     private int FirstFreeSlot()
     {
+        // Live as well as draft: the other binding page may hold a slot whose
+        // draft here has not caught up yet.
         for (int i = 0; i < _vm.CsSlotCount; i++)
-            if (!_drafts[i].IsConfigured) return i;
+            if (!_drafts[i].IsConfigured && !_vm.CsBindings[i].IsConfigured && !s_claimedSlots.Contains(i)) return i;
         return -1;
     }
 
@@ -2046,9 +2168,6 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         {
             var nd = _vm.CsNounDescs[n];
             if (nd == null || !nd.IsAvailable) continue;
-            // Aux-output nouns (caps v17) target a binding slot holding an aux
-            // output, which this window cannot configure yet.
-            if (nd.TargetKind == CsTarget.Aux) continue;
             // Only nouns whose action set intersects this component's actions.
             if (typeDesc != null && (typeDesc.Value.Actions & nd.Actions) == 0) continue;
             yield return (n, nd);
@@ -2063,7 +2182,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         for (int n = 0; n < _vm.CsNounDescs.Count; n++)
         {
             var nd = _vm.CsNounDescs[n];
-            if (nd == null || !nd.IsAvailable || nd.TargetKind == CsTarget.Aux) continue;
+            if (nd == null || !nd.IsAvailable) continue;
             if (btn != null && (btn.Value.Actions & nd.Actions) == 0) continue;
             yield return (n, nd);
         }
@@ -2159,9 +2278,9 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
 
         if (type == CsType.Button) b.Event = (byte)CsEvent.Press;
 
-        if (type == CsType.Ir)
+        if (type == CsType.Ir || IsAuxType(type))
         {
-            // Container binding: noun/action must be 0.
+            // Container binding: noun/action must be 0. An aux output boots off.
             b.Noun = 0; b.Action = 0;
             return b;
         }
@@ -2228,8 +2347,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             if (double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
                 || double.TryParse(box.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out v))
             {
-                onChanged(v);
+                // Formatted before the callback, so one that clamps or carries
+                // the value can show what it actually stored.
                 box.Text = FormatNumber(v);
+                onChanged(v);
             }
         }
         box.LostFocus += (_, _) => Commit();
@@ -2275,40 +2396,75 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private string SlotTitle(int slot) =>
         string.IsNullOrWhiteSpace(_nameEdits[slot]) ? TypeName(_drafts[slot].Type) : _nameEdits[slot].Trim();
 
-    /// <summary>One-line binding summary shown under the card title, e.g.
-    /// "Button · Volume · Output 1 · GPIO 5".</summary>
+    /// <summary>The line under a card's title: what the control does, as a
+    /// sentence, led by the type when a custom name has taken the title. After
+    /// the macOS Console.</summary>
     private string SlotSummary(int slot)
     {
         var d = _drafts[slot];
         if (!d.IsConfigured) return "";
-        var parts = new List<string>();
-        // Lead with the type when a custom name has displaced it from the title.
-        if (!string.IsNullOrWhiteSpace(_nameEdits[slot])) parts.Add(TypeName(d.Type));
+        string phrase = ActionPhrase(slot);
+        var timing = new List<string>();
+        if (d.OnDelay != 0) timing.Add($"{FormatDelay(d.OnDelay)} on");
+        if (d.OffDelay != 0) timing.Add($"{FormatDelay(d.OffDelay)} off");
+        if (timing.Count > 0) phrase += $" Delayed {string.Join(", ", timing)}.";
+        if (d.BaseBright is > 0 and < 100) phrase += $" Up to {d.BaseBright}% bright.";
+        return string.IsNullOrWhiteSpace(_nameEdits[slot]) ? phrase : $"{TypeName(d.Type)} - {phrase}";
+    }
 
-        if (d.Type == CsType.Ir)
+    private static string FormatDelay(ushort raw)
+    {
+        int total = (int)(raw * CsLimits.IndicatorDelayUnitSeconds), m = total / 60, sec = total % 60;
+        return m == 0 ? $"{sec} s" : sec == 0 ? $"{m} min" : $"{m} min {sec} s";
+    }
+
+    private string ActionPhrase(int slot)
+    {
+        var d = _drafts[slot];
+        switch (d.Type)
         {
-            int n = ConfiguredIrCount();
-            parts.Add(n == 1 ? "1 remote button" : $"{n} remote buttons");
-        }
-        else if (d.Type == CsType.Display)
-        {
-            parts.Add(CsDisplayModels.Name(d.Index));
-            parts.Add($"0x{DisplayAddress(d):X2}");
-        }
-        else
-        {
-            var nd = _vm.CsNounDescFor(d.Noun);
-            if (nd != null)
+            case CsType.Ir:
+                return "Receives commands from an IR remote.";
+            case CsType.AuxOut or CsType.AuxPwm:
             {
-                string noun = CsNounInfo.Name(d.Noun);
-                if (nd.IsTargeted) noun += $" ({BindingTargetLabel(d, nd)})";
-                else if (d.Noun == (byte)CsNoun.Macro) noun += $" ({_vm.CsMacroLabel(d.Value)})";
-                parts.Add(noun);
+                var x = (CsAuxExtras)d.Extras;
+                string boot = x.HasFlag(CsAuxExtras.BootSaved) ? "comes back as last saved"
+                    : x.HasFlag(CsAuxExtras.BootOn) ? "starts on" : "starts off";
+                return $"{(d.Type == CsType.AuxOut ? "On/off" : "Dimmable")} output on GPIO {d.Gpio0}, {boot}.";
             }
+            case CsType.Display:
+                return $"{CsDisplayModels.Name(d.Index)} on I2C, address 0x{DisplayAddress(d):X2}.";
         }
-        if (d.Gpio0 != CsLimits.GpioUnused)
-            parts.Add(d.Gpio1 != CsLimits.GpioUnused ? $"GPIO {d.Gpio0} + {d.Gpio1}" : $"GPIO {d.Gpio0}");
-        return string.Join("  ·  ", parts);
+        if ((CsNoun)d.Noun is CsNoun.PageValue) return PageValueNote(d) ?? "";
+        if ((CsNoun)d.Noun is CsNoun.DisplayPage && DisplayPageNote(d) is { } page) return page;
+
+        var nd = _vm.CsNounDescFor(d.Noun);
+        string noun = CsNounInfo.Name(d.Noun, d.Type);
+        if (nd?.IsTargeted == true)
+        {
+            string target = BindingTargetLabel(d, nd);
+            if (nd.HasBand) target += ", " + (d.Index >= 20 ? $"Crossover {d.Index - 19}" : $"Band {d.Index + 1}");
+            noun += $" ({target})";
+        }
+        else if (d.Noun == (byte)CsNoun.Macro) noun += $" ({_vm.CsMacroLabel(d.Value)})";
+        string press = PressWord(d);
+        bool isEnum = nd?.Kind == CsKind.Enum;
+        return (CsAction)d.Action switch
+        {
+            CsAction.Adjust => $"Turn to set {noun}.",
+            CsAction.Step => $"Turn to step {noun}.",
+            CsAction.Inc => isEnum ? $"{press} to select the next {noun}." : $"{press} to raise {noun}.",
+            CsAction.Dec => isEnum ? $"{press} to select the previous {noun}." : $"{press} to lower {noun}.",
+            CsAction.Toggle => $"{press} to toggle {noun}.",
+            CsAction.Set => $"{press} to set {noun}.",
+            CsAction.Momentary => $"Hold to engage {noun}; releases when let go.",
+            CsAction.Follow => $"{noun} follows the switch position.",
+            CsAction.Trigger => $"{press} to {noun.ToLowerInvariant()}.",
+            CsAction.IndEquals => $"Lights to indicate {noun}.",
+            CsAction.IndAbove => $"Lights when {noun} is above a level.",
+            CsAction.IndLevel => $"Brightness follows {noun}.",
+            _ => noun,
+        };
     }
 
     private static string TypeGlyph(CsType t) => t switch
@@ -2321,6 +2477,8 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         CsType.LedPwm => "",   // brightness
         CsType.Ir => "",       // remote
         CsType.Display => "",  // monitor
+        CsType.AuxOut => "",   // power
+        CsType.AuxPwm => "",   // brightness
         _ => "",
     };
 
@@ -2335,19 +2493,23 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         CsType.LedPwm => Color.FromArgb(255, 0x52, 0xB9, 0xD8),  // cyan
         CsType.Ir => Color.FromArgb(255, 0xF5, 0x73, 0x73),      // coral
         CsType.Display => Color.FromArgb(255, 0x04, 0x85, 0x6F),  // teal
+        CsType.AuxOut => Color.FromArgb(255, 0x7A, 0x5A, 0xAC),   // violet
+        CsType.AuxPwm => Color.FromArgb(255, 0x9B, 0x7B, 0xD0),   // lilac
         _ => Color.FromArgb(255, 0x90, 0x90, 0x90),
     };
 
     private static string TypeName(CsType t) => t switch
     {
-        CsType.Button => "Button",
-        CsType.Switch => "Switch",
-        CsType.Pot => "Potentiometer",
+        CsType.Button => "Push Button",
+        CsType.Switch => "Toggle Switch",
+        CsType.Pot => "Potentiometer / Fader",
         CsType.Encoder => "Rotary Encoder",
-        CsType.Led => "LED",
-        CsType.LedPwm => "LED (dimmable)",
+        CsType.Led => "Indicator LED",
+        CsType.LedPwm => "Dimmable LED",
         CsType.Ir => "IR Remote",
         CsType.Display => "Display",
+        CsType.AuxOut => "On/Off Output",
+        CsType.AuxPwm => "Dimmable Output",
         _ => "None",
     };
 

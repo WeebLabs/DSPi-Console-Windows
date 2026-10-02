@@ -106,6 +106,7 @@ internal static class HardwarePins
     private const string PageControlInterfaces = "hardware.control-interfaces";
     private const string PageDacMute = "hardware.dac-mute";
     private const string PageControlSurfaces = "control.surfaces";
+    private const string PageControlAux = "control.aux";
 
     /// <summary>Raised when any Hardware page commits a pin change.
     /// Subscribers (other Hardware pages) call <see cref="BuildOwnerMap"/>
@@ -298,8 +299,10 @@ internal static class HardwarePins
                 string label = !string.IsNullOrWhiteSpace(vm.CsNames[s])
                     ? vm.CsNames[s]
                     : $"Ctrl {s + 1}";
-                Claim(b.Gpio0, label, PinRole.Control, PageControlSurfaces);
-                if (b.Gpio1 != CsLimits.GpioUnused) Claim(b.Gpio1, label, PinRole.Control, PageControlSurfaces);
+                // An aux output lives on its own page.
+                string page = b.IsAux ? PageControlAux : PageControlSurfaces;
+                Claim(b.Gpio0, label, PinRole.Control, page);
+                if (b.Gpio1 != CsLimits.GpioUnused) Claim(b.Gpio1, label, PinRole.Control, page);
             }
         }
 

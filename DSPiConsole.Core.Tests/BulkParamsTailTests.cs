@@ -197,7 +197,7 @@ public class LimiterGangTests
 }
 
 /// <summary>Control-surface nouns through caps v20: every noun the firmware
-/// defines has a name and a picker group.</summary>
+/// defines has a name and a family in the function menu.</summary>
 public class ControlSurfaceNounTests
 {
     [Fact]
@@ -206,10 +206,37 @@ public class ControlSurfaceNounTests
         for (int n = 0; n <= (int)CsNoun.LimiterGr; n++)
         {
             Assert.DoesNotContain("Noun ", CsNounInfo.Name(n));
-            Assert.NotEqual("Other", CsNounInfo.Group(n));
+            Assert.NotNull(CsNounInfo.CategoryOf(n));
         }
         Assert.Equal("Subharm 56-80 Hz Level", CsNounInfo.Name(CsNoun.SubharmTop));
         Assert.Equal("Limiter Gain Reduction", CsNounInfo.Name(CsNoun.LimiterGr));
+    }
+
+    [Fact]
+    public void AuxOutputsCarryTheirExtrasAndAreMenuFamilies()
+    {
+        // caps v18: extras at @22, the aux types from a 52-byte header (11 types).
+        var b = new CsBinding { Type = CsType.AuxPwm, Gpio0 = 14, Value = 12800, Extras = (byte)(CsAuxExtras.BootOn | CsAuxExtras.Linear) };
+        var wire = b.ToBytes();
+        Assert.Equal(0x05, wire[22]);
+        var back = CsBinding.FromBytes(wire)!;
+        Assert.True(back.IsAux);
+        Assert.Equal(b.Extras, back.Extras);
+        Assert.True(back.WireEquals(b));
+
+        var header = new byte[52];
+        header[0] = 18; header[1] = 16; header[2] = 11; header[3] = 79;
+        Assert.True(CsCapsHeader.FromBytes(header)!.HasAux);
+        header[2] = 9;
+        Assert.False(CsCapsHeader.FromBytes(header)!.HasAux);
+
+        var aux = CsNounInfo.CategoryOf((int)CsNoun.AuxLevel)!;
+        Assert.Equal("Auxiliary Outputs", aux.Title);
+        Assert.Equal("Enable/Disable", CsNounInfo.MenuLabel((int)CsNoun.Aux, CsType.Button, aux));
+        Assert.Equal("Enabled", CsNounInfo.MenuLabel((int)CsNoun.Aux, CsType.Led, aux));
+        Assert.Equal("Level", CsNounInfo.MenuLabel((int)CsNoun.AuxLevel, CsType.Pot, aux));
+        Assert.Equal("Clear Clipping", CsNounInfo.Name((int)CsNoun.Clip, CsType.Button));
+        Assert.Equal("Clip", CsNounInfo.Name((int)CsNoun.Clip, CsType.Led));
     }
 
     [Fact]

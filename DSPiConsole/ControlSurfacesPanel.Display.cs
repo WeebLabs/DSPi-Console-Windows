@@ -765,6 +765,19 @@ public sealed partial class ControlSurfacesPanel
             next.Target = 0;
             next.Index = 0;
             next.SetFlag(CsDisplayPageFlags.Group, false);
+            // An aux noun addresses an output, and the page applies at once:
+            // point it at one the device will accept, or leave the page alone.
+            if (_vm.CsNounDescFor(noun) is { TargetKind: CsTarget.Aux } nd)
+            {
+                var aux = TargetChoices(noun, nd);
+                if (aux.Count == 0)
+                {
+                    ShowToast("Add an auxiliary output first; a page on it needs one to show.");
+                    DispatcherQueue.TryEnqueue(() => RefreshDisplayPageRow(index));
+                    return;
+                }
+                next.Target = (byte)aux[0];
+            }
             // A bar needs a range to plot inside; switching to a switch or a mode
             // leaves it with none, and the device rejects the whole page rather
             // than ignoring the flag.
@@ -779,13 +792,7 @@ public sealed partial class ControlSurfacesPanel
     {
         var groups = CompatibleGroups(nd).ToList();
         var combo = DisplayPageCombo(160);
-        for (int i = 0; i < nd.TargetCount; i++)
-            combo.Items.Add(new ComboBoxItem { Content = ChannelLabel(nd.TargetKind, i), Tag = i });
-        foreach (int g in groups)
-            combo.Items.Add(new ComboBoxItem { Content = $"Group: {_vm.CsGroupLabel(g)}", Tag = new GroupTag(g) });
-        combo.SelectedIndex = page.IsGrouped
-            ? (groups.IndexOf(page.Target) is var gi && gi >= 0 ? nd.TargetCount + gi : -1)
-            : (page.Target < nd.TargetCount ? page.Target : 0);
+        FillTargetCombo(combo, page.Noun, nd, groups, page.IsGrouped, page.Target);
         combo.SelectionChanged += (_, _) =>
         {
             if (_building) return;

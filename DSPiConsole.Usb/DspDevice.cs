@@ -184,6 +184,12 @@ public static class VendorCommands
     // latches, firmware records CS_STATUS_PENDING, and the host polls GetCsStatus
     // (0x87) until LastSlot matches (0x80|sub for IR, 0xFF for save/revert) and
     // LastStatus leaves Pending. 0x88-0x8A are reserved (I2S slave-mode branch).
+    // Control Surfaces aux outputs (caps v18); wValue = the slot holding one.
+    // Runtime only and immediate, so never deferred-polled.
+    public const byte SetCsAuxState        = 0x04; // OUT 1 byte 0/1; STALL unless an aux slot
+    public const byte GetCsAuxState        = 0x05; // IN 1 byte; wValue 0xFFFF -> 48 bytes {state[16], level_q8[16] LE}
+    public const byte SetCsAuxLevel        = 0x06; // OUT 2 bytes 8.8 percent LE, clamped; AUX_PWM only
+    public const byte GetCsAuxLevel        = 0x07; // IN 2 bytes 8.8 percent LE
     public const byte SetCsBinding         = 0x84; // OUT 24-byte CsBinding, wValue=slot (0-15)
     public const byte GetCsBinding         = 0x85; // IN 24-byte CsBinding, wValue=slot
     public const byte GetCsCaps            = 0x86; // IN wValue=0xFFFF→header; wValue=noun→12-byte desc
@@ -400,6 +406,10 @@ public enum ParamSource : byte
     Internal = 6,  // firmware-initiated (clamp, recalc)
     Uac1     = 7   // UAC1 Feature Unit SET_CUR (OS volume slider, mute key)
 }
+
+/// <summary>An aux output's live state (NOTIFY_EVT_CS_AUX): its slot, on/off,
+/// and level as 8.8 percent (0 on an on/off output).</summary>
+public readonly record struct CsAuxNotification(byte Slot, bool On, ushort LevelQ8);
 
 /// <summary>
 /// A device-pushed channel name change. Decoded from a v2 PARAM_CHANGED packet
@@ -701,6 +711,11 @@ public partial class DspDevice : ObservableObject, IDisposable
     /// 0x09 I2S slave clock, 0x0B ADAT input). Argument is the event id; the VM
     /// re-reads the corresponding status packet.</summary>
     public event EventHandler<byte>? StatusEventNotified;
+
+    /// <summary>NOTIFY_EVT_CS_AUX (0x0C, caps v18): an aux output's live state or
+    /// level changed, from any source (a bound control included). Both values
+    /// ride every event.</summary>
+    public event EventHandler<CsAuxNotification>? CsAuxNotified;
 
     // Notification endpoint state (bulk IN EP 0x83, V7+ firmware).
     private UsbEndpointReader? _notifyReader;
@@ -2559,6 +2574,11 @@ public partial class DspDevice : ObservableObject, IDisposable
                 InputFormatNotified?.Invoke(this, buf[4]);
                 break;
 
+            case 0x0C: // CS_AUX: [ver, evt, flags, seq, slot, state, level_q8 LE, src]
+                if (len < 9) return;
+                CsAuxNotified?.Invoke(this, new CsAuxNotification(buf[4], buf[5] != 0, (ushort)(buf[6] | buf[7] << 8)));
+                break;
+
             case 0x07: // SIGGEN_STATE
             case 0x08: // ADAT (output) STATE
             case 0x09: // I2S_SLAVE_STATE
@@ -2842,6 +2862,32 @@ public partial class DspDevice : ObservableObject, IDisposable
         var r = ControlTransferIn(VendorCommands.GetCsCaps, (ushort)(noun & 0xFF), CsNounDesc.WireSize);
         return r == null ? null : CsNounDesc.FromBytes(r);
     }
+
+    /// <summary>Every slot's aux on/off flag and 8.8 level (0x05, wValue 0xFFFF;
+    /// zeros on slots that hold no aux output). Null on transfer failure.</summary>
+    public (bool[] On, ushort[] LevelQ8)? GetCsAuxStates()
+    {
+        var r = ControlTransferIn(VendorCommands.GetCsAuxState, 0xFFFF, 3 * CsLimits.MaxBindings);
+        if (r == null || r.Length < 3 * CsLimits.MaxBindings) return null;
+        var on = new bool[CsLimits.MaxBindings];
+        var level = new ushort[CsLimits.MaxBindings];
+        for (int i = 0; i < CsLimits.MaxBindings; i++)
+        {
+            on[i] = r[i] != 0;
+            level[i] = BitConverter.ToUInt16(r, CsLimits.MaxBindings + 2 * i);
+        }
+        return (on, level);
+    }
+
+    /// <summary>Switch an aux output on or off now (0x04). Not persisted; false if
+    /// the slot holds no live aux output.</summary>
+    public bool SetCsAuxState(int slot, bool on) =>
+        ControlTransferOut(VendorCommands.SetCsAuxState, (ushort)(slot & 0xFF), new[] { (byte)(on ? 1 : 0) });
+
+    /// <summary>Set a dimmable aux output's level now (0x06), 8.8 percent,
+    /// clamped to 100 % by the device. AUX_PWM only.</summary>
+    public bool SetCsAuxLevel(int slot, ushort levelQ8) =>
+        ControlTransferOut(VendorCommands.SetCsAuxLevel, (ushort)(slot & 0xFF), BitConverter.GetBytes(levelQ8));
 
     /// <summary>Read the live 24-byte binding for a slot (0x85).</summary>
     public CsBinding? GetCsBinding(int slot)

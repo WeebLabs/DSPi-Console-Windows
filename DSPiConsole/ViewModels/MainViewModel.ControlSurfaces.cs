@@ -305,6 +305,7 @@ public partial class MainViewModel
         }
 
         var status = _device.GetCsStatus();
+        var aux = caps.HasAux ? _device.GetCsAuxStates() : null;
 
         _csCaps = caps;
         _csNounDescs = descs;
@@ -324,6 +325,11 @@ public partial class MainViewModel
 
         _dispatcher.TryEnqueue(() =>
         {
+            for (int i = 0; i < CsLimits.MaxBindings; i++)
+            {
+                _csAuxOn[i] = aux?.On[i] ?? false;
+                _csAuxLevelQ8[i] = aux?.LevelQ8[i] ?? 0;
+            }
             ControlSurfacesSupported = true;
             OnPropertyChanged(nameof(CsStatus));
             OnPropertyChanged(nameof(CsExtStatus));
@@ -359,6 +365,9 @@ public partial class MainViewModel
             byte result = _device.SetCsBinding(slot, binding);
             _csBindings[slot] = _device.GetCsBinding(slot) ?? CsBinding.Cleared();
             RefreshCsStatus();
+            // Applying an aux output sets its live state to the boot values, and
+            // removing one zeroes it, with no notification for either.
+            RefreshCsAux();
             return result;
         }
     }
@@ -577,7 +586,23 @@ public partial class MainViewModel
         {
             byte result = _device.CsSave();
             RefreshCsStatus();
-            if (result == DSPiConsole.Core.Models.CsStatus.Success) CaptureCsCleanBaseline();
+            if (result == DSPiConsole.Core.Models.CsStatus.Success)
+            {
+                // Saving folds an "as last saved" aux output's live switch and
+                // level into its stored boot fields, so the copies here are stale.
+                var reread = new List<int>();
+                for (int s = 0; s < CsSlotCount; s++)
+                {
+                    if (!_csBindings[s].IsAux) continue;
+                    if (_device.GetCsBinding(s) is { } b && !b.WireEquals(_csBindings[s]))
+                    {
+                        _csBindings[s] = b;
+                        reread.Add(s);
+                    }
+                }
+                CaptureCsCleanBaseline();
+                if (reread.Count > 0) _dispatcher.TryEnqueue(() => CsBindingsReread?.Invoke(reread));
+            }
             _dispatcher.TryEnqueue(() => OnPropertyChanged(nameof(CsDirty)));
             return result;
         }
@@ -624,6 +649,9 @@ public partial class MainViewModel
             var status = _device.GetCsStatus();
             _csStatus = status;
             if (status != null && !status.Dirty) CaptureCsCleanBaseline();
+            // A revert re-applies the flash config, which can add or remove
+            // aux outputs; the live values of those that stay carry over.
+            RefreshCsAux();
         }
 
         _dispatcher.TryEnqueue(() =>
@@ -645,6 +673,7 @@ public partial class MainViewModel
     /// target the app's channel model doesn't cover.</summary>
     public string CsTargetLabel(CsTarget kind, int index)
     {
+        if (kind == CsTarget.Aux) return CsAuxName(index);
         var ch = CsTargetChannel(kind, index);
         if (ch != null) return GetChannelName(ch);
         return kind switch
@@ -791,9 +820,12 @@ public partial class MainViewModel
             bool bindingSame = _csBindings[i].WireEquals(_csCleanBindings[i]);
             bool nameSame = string.Equals(_csNames[i], _csCleanNames[i], StringComparison.Ordinal);
             if (bindingSame && nameSame) continue;
-            string label = string.IsNullOrWhiteSpace(_csNames[i]) ? $"Control {i + 1}" : _csNames[i];
+            // Aux outputs are edited on a page of their own, which the key names.
+            bool aux = _csBindings[i].IsAux || _csCleanBindings[i].IsAux;
+            string label = string.IsNullOrWhiteSpace(_csNames[i])
+                ? (aux ? $"Aux {i + 1}" : $"Control {i + 1}") : _csNames[i];
             var d = Delta(_csCleanBindings[i].IsConfigured, _csBindings[i].IsConfigured);
-            changes.Add(new($"cs.slot.{i}", label, d.Old, d.New));
+            changes.Add(new(aux ? $"cs.aux.{i}" : $"cs.slot.{i}", label, d.Old, d.New));
         }
         for (int i = 0; i < _csIrCommands.Length; i++)
         {

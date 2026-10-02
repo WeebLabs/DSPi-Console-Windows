@@ -2,6 +2,15 @@
 
 ## 2026-10-03
 
+### Control Surfaces
+- Auxiliary outputs: a page of their own under Control for GPIOs the DSPi switches or dims for something it knows nothing about (an amplifier trigger, a speaker relay, a panel lamp, a fan). Each output has a live switch (and, dimmable, a level) that acts at once without touching flash, its pin and sense, a level limit and linear response for dimmable ones, turn-on and turn-off delays, its power-on state (fixed, or as last saved), and a list of the controls, remote keys and macros that drive it
+- Controls, remote keys, macro steps and display pages can drive an aux output through Aux Switch and Aux Level, picking the output by name
+- The function menu is grouped into families (Volume & Mute, Loudness, Crossfeed, and so on), with short names inside each
+- A card's type badge is a menu that changes the component type
+- Turn-on and turn-off delays are entered in minutes and seconds, with a note when they are set
+- Card summaries read as sentences ("Press to toggle Mute.", "Lights to indicate Mute. Delayed 2 s on, 10 min off."), and component types use the macOS Console's names
+- A group card says how many controls use it
+
 ### Firmware update
 - File > Update Firmware installs the firmware that ships with this Console: click Update Firmware and the device restarts into its bootloader, the firmware for its chip is written, and the window waits for the device to come back and confirms the version it reports; a board already in bootloader mode (BOOTSEL held while plugging in) is found on its own
 - The window shows this Console's version beside the connected device's, warns when the update would be a downgrade, offers Export Configuration first, and steps through Prepare, Write, Verify and Done, with Try Again and Update Another Board

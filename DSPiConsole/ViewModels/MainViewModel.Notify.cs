@@ -37,6 +37,8 @@ public partial class MainViewModel
             Task.Run(RefreshUsbInputChannelCount);
         };
 
+        HookCsAuxNotifications();
+
         _device.StatusEventNotified += (_, eventId) =>
         {
             switch (eventId)

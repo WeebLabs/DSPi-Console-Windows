@@ -58,6 +58,7 @@ internal static class SettingsRegistry
 
         // ── Control ────────────────────────────────────────────────
         TryAdd<ControlMacrosPage>(pages);
+        TryAdd<ControlAuxPage>(pages);
         TryAdd<ControlGroupsPage>(pages);
         TryAdd<ControlSurfacesPage>(pages);
         TryAdd<HardwareControlInterfacesPage>(pages);

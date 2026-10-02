@@ -31,7 +31,26 @@ public enum CsType : byte
     // caps v10: an I2C character or OLED panel. A container like the IR
     // receiver — SDA, SCL, a model and an address — with what it shows held in
     // a separate config record and page table.
-    Display = 8
+    Display = 8,
+    // caps v18: auxiliary outputs. Containers like the IR receiver: the slot owns
+    // one output pin, a name, an invert sense, on/off delays and boot values, and
+    // a control switches (or dims) it through the Aux / Aux Level nouns, whose
+    // target is this slot. Their live on/off flag and level are runtime values.
+    AuxOut = 9,
+    AuxPwm = 10,
+}
+
+/// <summary>Aux output extras (caps v18, <see cref="CsBinding.Extras"/>).</summary>
+[Flags]
+public enum CsAuxExtras : byte
+{
+    None = 0,
+    /// <summary>Boot with the output on (else off).</summary>
+    BootOn = 0x01,
+    /// <summary>Saving folds the live on/off flag and level into the boot fields.</summary>
+    BootSaved = 0x02,
+    /// <summary>AUX_PWM: linear duty instead of the squared perceptual curve (fans, heaters).</summary>
+    Linear = 0x04,
 }
 
 /// <summary>DSP parameter a control drives or reflects (firmware CsNoun, 0..78).
@@ -454,36 +473,110 @@ public static class CsNounInfo
 
     public static string Name(CsNoun noun) => Name((int)noun);
 
-    /// <summary>Coarse UI grouping for the noun picker.</summary>
-    public static string Group(int noun) => (CsNoun)noun switch
+    /// <summary>The name a control's editor shows for a noun, which for a few
+    /// depends on whether the control acts or indicates: a button clears
+    /// clipping where an LED shows it. After the macOS Console.</summary>
+    public static string Name(int noun, CsType type)
     {
-        CsNoun.UserVolume or CsNoun.MasterVolume or CsNoun.UserMute or CsNoun.Preamp
-            or CsNoun.Level or CsNoun.InputLevelMax => "Volume",
-        CsNoun.Loudness or CsNoun.Crossfeed or CsNoun.Leveller or CsNoun.EqBypass
-            or CsNoun.CrossfeedPreset or CsNoun.CrossfeedItd or CsNoun.LevellerAmount
-            or CsNoun.LevellerSpeed or CsNoun.LevellerLookahead
-            or CsNoun.LoudnessSpl or CsNoun.LoudnessIntensity => "DSP",
-        CsNoun.Upmix or CsNoun.UpmixCenterMode or CsNoun.UpmixSurroundMode
-            or CsNoun.UpmixStrength or CsNoun.UpmixWidth or CsNoun.UpmixPresence => "Upmixer",
-        CsNoun.Psybass or CsNoun.PsybassCutoff or CsNoun.PsybassHarmonics
-            or CsNoun.PsybassDrive or CsNoun.PsybassCharacter
-            or CsNoun.PsybassOriginal => "Psychoacoustic Bass",
-        CsNoun.OutputGain or CsNoun.OutputMute or CsNoun.OutputEnable
-            or CsNoun.OutputDelay => "Output",
-        CsNoun.FilterFreq or CsNoun.FilterGain or CsNoun.FilterQ or CsNoun.FilterType
-            or CsNoun.FilterBypass => "Filter",
-        CsNoun.Preset or CsNoun.InputSource or CsNoun.Siggen or CsNoun.DacMuteTest
-            or CsNoun.SampleRate or CsNoun.UsbStreaming or CsNoun.AdatActive
-            or CsNoun.PresetReload or CsNoun.Macro => "System",
-        CsNoun.DisplayPage or CsNoun.DisplayEdit or CsNoun.PageValue => "Display",
-        >= CsNoun.Subharm and <= CsNoun.SubharmSolo => "Subharmonic Synth",
-        CsNoun.Aux or CsNoun.AuxLevel => "Auxiliary Outputs",
-        >= CsNoun.Tube and <= CsNoun.TubeMix => "Tube Modeller",
-        >= CsNoun.Limiter and <= CsNoun.LimiterGr => "Output Limiter",
-        CsNoun.LgSync or CsNoun.LgPresent or CsNoun.LgMuted or CsNoun.SpdifLock => "LG / S/PDIF",
-        CsNoun.Clip or CsNoun.ClipCh or CsNoun.CpuLoad => "Status",
-        _ => "Other"
+        bool indicator = type is CsType.Led or CsType.LedPwm;
+        return (CsNoun)noun switch
+        {
+            CsNoun.Clip when !indicator => "Clear Clipping",
+            CsNoun.DacMuteTest when !indicator => "Test DAC Mute",
+            CsNoun.Macro when indicator => "Running Macro",
+            _ => Name(noun),
+        };
+    }
+
+    /// <summary>One family of the function menu: its title, the noun that
+    /// switches the feature on and off (labelled Enable/Disable inside it), and
+    /// its nouns in the order the menu lists them.</summary>
+    public sealed record Category(string Title, CsNoun? Enable, CsNoun[] Nouns);
+
+    /// <summary>The function menu's families, in the macOS Console's order (with
+    /// the output limiter, which it files under Other, given its own). A noun
+    /// in none of them is listed under Other.</summary>
+    public static readonly Category[] Categories =
+    {
+        new("Volume & Mute", null, new[] { CsNoun.UserVolume, CsNoun.MasterVolume, CsNoun.UserMute }),
+        new("Loudness", CsNoun.Loudness, new[] { CsNoun.Loudness, CsNoun.LoudnessSpl, CsNoun.LoudnessIntensity }),
+        new("Crossfeed", CsNoun.Crossfeed, new[] { CsNoun.Crossfeed, CsNoun.CrossfeedPreset, CsNoun.CrossfeedItd }),
+        new("Volume Leveller", CsNoun.Leveller, new[] { CsNoun.Leveller, CsNoun.LevellerAmount, CsNoun.LevellerSpeed, CsNoun.LevellerLookahead }),
+        new("Psychoacoustic Bass", CsNoun.Psybass, new[] { CsNoun.Psybass, CsNoun.PsybassCutoff, CsNoun.PsybassHarmonics,
+            CsNoun.PsybassDrive, CsNoun.PsybassCharacter, CsNoun.PsybassOriginal }),
+        new("Subharmonic Synth", CsNoun.Subharm, new[] { CsNoun.Subharm, CsNoun.SubharmLow, CsNoun.SubharmHigh, CsNoun.SubharmTop,
+            CsNoun.SubharmBoost, CsNoun.SubharmSelect, CsNoun.SubharmDepth, CsNoun.SubharmHold, CsNoun.SubharmCeiling,
+            CsNoun.SubharmLink, CsNoun.SubharmSolo }),
+        new("Tube Modeller", CsNoun.Tube, new[] { CsNoun.Tube, CsNoun.TubeType, CsNoun.TubeDrive, CsNoun.TubeMix }),
+        new("Output Limiter", CsNoun.Limiter, new[] { CsNoun.Limiter, CsNoun.LimiterThreshold, CsNoun.LimiterRelease,
+            CsNoun.LimiterLink, CsNoun.LimiterGr }),
+        new("Upmixer", CsNoun.Upmix, new[] { CsNoun.Upmix, CsNoun.UpmixCenterMode, CsNoun.UpmixSurroundMode,
+            CsNoun.UpmixStrength, CsNoun.UpmixWidth, CsNoun.UpmixPresence }),
+        new("Input & Presets", null, new[] { CsNoun.Preset, CsNoun.PresetReload, CsNoun.InputSource, CsNoun.LgSync }),
+        new("Channels", null, new[] { CsNoun.Preamp, CsNoun.OutputGain, CsNoun.OutputMute, CsNoun.OutputEnable, CsNoun.OutputDelay }),
+        new("Filters", null, new[] { CsNoun.EqBypass, CsNoun.FilterFreq, CsNoun.FilterGain, CsNoun.FilterQ,
+            CsNoun.FilterType, CsNoun.FilterBypass }),
+        new("Tools", null, new[] { CsNoun.Macro, CsNoun.Siggen, CsNoun.DacMuteTest, CsNoun.Clip }),
+        new("Display", null, new[] { CsNoun.DisplayPage, CsNoun.PageValue, CsNoun.DisplayEdit }),
+        new("Auxiliary Outputs", CsNoun.Aux, new[] { CsNoun.Aux, CsNoun.AuxLevel }),
+        new("Status", null, new[] { CsNoun.CpuLoad, CsNoun.ClipCh, CsNoun.Level, CsNoun.InputLevelMax, CsNoun.SpdifLock,
+            CsNoun.SampleRate, CsNoun.UsbStreaming, CsNoun.AdatActive, CsNoun.LgPresent, CsNoun.LgMuted }),
     };
+
+    /// <summary>A noun's label inside its family's submenu, where the family
+    /// title already says what it belongs to.</summary>
+    public static string MenuLabel(int noun, CsType type, Category? category)
+    {
+        if (category?.Enable is { } enable && (int)enable == noun)
+            return type is CsType.Led or CsType.LedPwm ? "Enabled" : "Enable/Disable";
+        return (CsNoun)noun switch
+        {
+            CsNoun.LoudnessSpl => "Reference SPL",
+            CsNoun.LoudnessIntensity => "Intensity",
+            CsNoun.CrossfeedPreset => "Preset",
+            CsNoun.CrossfeedItd => "ITD",
+            CsNoun.LevellerAmount => "Amount",
+            CsNoun.LevellerSpeed => "Speed",
+            CsNoun.LevellerLookahead => "Lookahead",
+            CsNoun.PsybassCutoff => "Cutoff Frequency",
+            CsNoun.PsybassHarmonics => "Harmonics",
+            CsNoun.PsybassDrive => "Drive",
+            CsNoun.PsybassCharacter => "Character",
+            CsNoun.SubharmLow => "24-36 Hz Level",
+            CsNoun.SubharmHigh => "36-56 Hz Level",
+            CsNoun.SubharmTop => "56-80 Hz Level",
+            CsNoun.SubharmBoost => "LF Boost",
+            CsNoun.SubharmSelect => "Selectivity",
+            CsNoun.SubharmDepth => "Selectivity Depth",
+            CsNoun.SubharmHold => "Selectivity Hold",
+            CsNoun.SubharmCeiling => "Sub Ceiling",
+            CsNoun.SubharmLink => "Pair Link",
+            CsNoun.SubharmSolo => "Solo",
+            CsNoun.TubeType => "Type",
+            CsNoun.TubeDrive => "Drive",
+            CsNoun.TubeMix => "Mix",
+            CsNoun.LimiterThreshold => "Threshold",
+            CsNoun.LimiterRelease => "Release",
+            CsNoun.LimiterLink => "Link Group",
+            CsNoun.LimiterGr => "Gain Reduction",
+            CsNoun.UpmixCenterMode => "Centre Mode",
+            CsNoun.UpmixSurroundMode => "Surround Mode",
+            CsNoun.UpmixStrength => "Strength",
+            CsNoun.UpmixWidth => "Centre Width",
+            CsNoun.UpmixPresence => "Centre Presence",
+            CsNoun.FilterFreq => "Frequency",
+            CsNoun.FilterGain => "Gain",
+            CsNoun.FilterQ => "Q",
+            CsNoun.FilterType => "Type",
+            CsNoun.FilterBypass => "Bypass",
+            CsNoun.AuxLevel => "Level",
+            _ => Name(noun, type),
+        };
+    }
+
+    /// <summary>The family a noun is listed under, or null for Other.</summary>
+    public static Category? CategoryOf(int noun) =>
+        Categories.FirstOrDefault(c => c.Nouns.Any(n => (int)n == noun));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -519,7 +612,13 @@ public sealed class CsBinding
     public short RangeMax;      // @16 pot/IND_LEVEL span high
     public ushort OnDelay;      // @18 caps v8: TON filter, 0.1 s units (LED IND_EQUALS/IND_ABOVE only)
     public ushort OffDelay;     // @20 caps v8: TOF filter, same units and rules
-    // @22..23 reserved2[2]
+    /// <summary>@22 caps v18: type extras, <see cref="CsAuxExtras"/> on an aux
+    /// slot; every other type writes 0.</summary>
+    public byte Extras;
+    // @23 reserved2
+
+    /// <summary>Either aux output type (caps v18).</summary>
+    public bool IsAux => Type is CsType.AuxOut or CsType.AuxPwm;
 
     public bool IsConfigured => Type != CsType.None;
 
@@ -549,6 +648,7 @@ public sealed class CsBinding
         BitConverter.GetBytes(RangeMax).CopyTo(b, 16);
         BitConverter.GetBytes(OnDelay).CopyTo(b, 18);
         BitConverter.GetBytes(OffDelay).CopyTo(b, 20);
+        b[22] = Extras;
         return b;
     }
 
@@ -573,6 +673,7 @@ public sealed class CsBinding
             RangeMax = BitConverter.ToInt16(d, 16),
             OnDelay = BitConverter.ToUInt16(d, 18),
             OffDelay = BitConverter.ToUInt16(d, 20),
+            Extras = d[22],
         };
     }
 
@@ -1246,6 +1347,9 @@ public sealed class CsCapsHeader
     /// v10). Read from the type table rather than the version, the same
     /// self-describing rule the rest of the editor follows.</summary>
     public bool HasDisplay => TypeCount > (int)CsType.Display;
+
+    /// <summary>Whether this firmware offers the aux output components (caps v18).</summary>
+    public bool HasAux => TypeCount > (int)CsType.AuxPwm;
 
     public static CsCapsHeader? FromBytes(byte[] d)
     {

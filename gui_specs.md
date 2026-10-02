@@ -393,6 +393,15 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **System Statistics** (`StatsWindow.cs`, 980 x 620): columns of 16 px padding, section labels 10 bold secondary; counters coloured once nonzero (overruns #FF9F0A, underruns #FF453A); buffer rows 48 px with a `Controls/BufferFillTrace.cs` trace (256 samples, watermark band at 14 %, dashed 50 % guide, 1.25 px trace, PDM ring dashed); third column only when an optional input or interface applies; footer with a connection dot and "Updated every 2 seconds"
 - **Interrupt Monitor** (`InterruptMonitorWindow.cs`, 900 x 560): toolbar with Pause/Resume (Ctrl+P), Clear (Ctrl+K), Auto-scroll, Show IDLE, Show raw bytes, and at the right the state (Listening #30D158, Paused #FF9F0A, Inactive secondary) and event count; the log in Cascadia Code 11 pt, selectable, no wrap; footer with packet and hidden-IDLE counts; decode in `DSPiConsole.Core/NotifyDecoder.cs`
 
+## Control Surfaces: aux outputs and catch-up (ControlSurfacesPanel.Aux.cs)
+
+- Settings › Control › Auxiliary Outputs (`ControlAuxPage`, order 50): the binding section of `ControlSurfacesPanel` with `CsSection.Aux`, showing only aux slots (the Control Surfaces page shows the rest); Add Output menu (On/Off Output, Dimmable Output), empty state "No auxiliary outputs set up", 11 pt secondary explanatory footer
+- Aux card body: Output toggle (and Level slider 0-100 %, 160 px, dimmable) enabled only while the slot runs, with a one-line note; GPIO; Active-low output; Level limit (%) and Linear response (dimmable); turn-on/off delays; At power-on (Fixed / As last saved) with Starts on and Starting level, or the last-saved note; Driven by list; Apply/Revert
+- Badge tints: On/Off Output #7A5AAC (power glyph), Dimmable Output #9B7BD0 (brightness glyph); the badge is a button whose flyout changes the type ("Change the component type")
+- Function menu: a DropDownButton with one MenuFlyoutSubItem per family (`CsNounInfo.Categories`), toggle items with short labels (`MenuLabel`); flat when one family
+- Delays: minutes and seconds fields (56 px) with "min" / "s" captions, limit in the tooltip, restart caveat when either is set
+- Group cards: "Used by N controls. ..." under the members when live bindings use the group
+
 ## Firmware Update (FirmwareUpdateWindow.cs)
 
 - 480 x 540, header (22 px accent glyph, "Firmware Update" 14 semibold, "Install firmware <version> onto a DSPi board" 10 secondary), body 16 px padding, 14 px between rows; cards 8 px corners, `PanelColor` fill, 1 px border grey at 20 %
