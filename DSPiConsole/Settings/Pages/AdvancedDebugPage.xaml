@@ -6,7 +6,7 @@
     xmlns:settings="using:DSPiConsole.Settings"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls">
 
-    <StackPanel Spacing="4">
+    <StackPanel x:Name="Cards" Spacing="4">
         <!--
             One-card page. Phase 1 keeps a single Debug toggle to demonstrate
             the minimal SettingsCard rhythm. The Description slot replaces

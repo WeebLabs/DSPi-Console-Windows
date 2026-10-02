@@ -393,6 +393,14 @@ A port of the macOS Console's editor. Behaviour lives in `DSPiConsole.Core/Graph
 - **System Statistics** (`StatsWindow.cs`, 980 x 620): columns of 16 px padding, section labels 10 bold secondary; counters coloured once nonzero (overruns #FF9F0A, underruns #FF453A); buffer rows 48 px with a `Controls/BufferFillTrace.cs` trace (256 samples, watermark band at 14 %, dashed 50 % guide, 1.25 px trace, PDM ring dashed); third column only when an optional input or interface applies; footer with a connection dot and "Updated every 2 seconds"
 - **Interrupt Monitor** (`InterruptMonitorWindow.cs`, 900 x 560): toolbar with Pause/Resume (Ctrl+P), Clear (Ctrl+K), Auto-scroll, Show IDLE, Show raw bytes, and at the right the state (Listening #30D158, Paused #FF9F0A, Inactive secondary) and event count; the log in Cascadia Code 11 pt, selectable, no wrap; footer with packet and hidden-IDLE counts; decode in `DSPiConsole.Core/NotifyDecoder.cs`
 
+## Getting Started and What's New (GettingStartedView.cs, WhatsNewWindow.cs, MainWindow.Onboarding.cs)
+
+- The wizard replaces the console (RootGrid) in the main window's row 1, crossfading over 350 ms; the menu stays, with everything but Help, Settings and Exit disabled
+- Header: E7BE accent glyph 20 pt, "Getting Started" 15 semibold, "Step n of 3" 11 secondary, step strip (60 px dots, max 460 px) centred; body 28 px padding, at most 560 px wide; title 22 semibold, blurb 13 secondary, info rows (20 px glyph column, 12 pt text); board card at least 190 px tall
+- Footer 24/16 padding: Skip Setup at the left; Back and Continue (accent) / "Start Using DSPi Console" at the right; Continue appears on the board stage only once firmware is verified or the device already matches
+- Install cards shared with Firmware Update through `Controls/FirmwareInstallUi.cs`
+- What's New: 460 x 440 window, each release's headline (14 semibold) with its version at the right, bulleted items 13 pt, Done (accent)
+
 ## Dashboard layout (Controls/DashboardGrid.cs, MainWindow.DashboardLayout.cs)
 
 - `DashboardGrid` replaces the dashboard StackPanel: equal-width columns, 16 px gaps, each row as tall as its tallest card; Auto = floor((width + 16) / (500 + 16)) columns, never more than there are cards; fixed 1-3 from `AppSettings.DashboardCardsPerRow` (0 = Auto)

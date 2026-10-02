@@ -25,7 +25,7 @@
                     Padding="6" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE700;" FontSize="14"/>
                 <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="OnMainMenuOpening">
+                    <MenuFlyout x:Name="MainMenu" Placement="BottomEdgeAlignedLeft" Opening="OnMainMenuOpening">
                         <MenuFlyoutSubItem Text="Import">
                             <MenuFlyoutItem x:Name="ImportPresetMenuItem" Text="Preset File..." Click="OnImportPresetClick"/>
                             <MenuFlyoutItem Text="Filters..." Click="OnImportFiltersClick">
@@ -114,7 +114,7 @@
                                 <KeyboardAccelerator Modifiers="Control,Shift" Key="I"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
                         </MenuFlyoutItem>
-                        <MenuFlyoutItem Text="Settings..." Click="OnSettingsClick"/>
+                        <MenuFlyoutItem x:Name="SettingsMenuItem" Text="Settings..." Click="OnSettingsClick"/>
                         <MenuFlyoutSeparator/>
                         <MenuFlyoutItem Text="Save Preset" Click="OnSavePresetClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
@@ -130,7 +130,16 @@
                         <MenuFlyoutSeparator/>
                         <MenuFlyoutItem Text="Update Firmware..." Click="OnUpdateFirmwareClick"/>
                         <MenuFlyoutSeparator/>
-                        <MenuFlyoutItem Text="Exit" Click="OnExitClick">
+                        <MenuFlyoutSubItem x:Name="HelpMenu" Text="Help">
+                            <MenuFlyoutItem Text="Getting Started..." Click="OnGettingStartedClick"/>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem Text="What's New in DSPi Console" Click="OnWhatsNewClick"/>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem Text="DSPi Console on GitHub" Click="OnConsoleGitHubClick"/>
+                            <MenuFlyoutItem Text="DSPi Firmware on GitHub" Click="OnFirmwareGitHubClick"/>
+                        </MenuFlyoutSubItem>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem x:Name="ExitMenuItem" Text="Exit" Click="OnExitClick">
                             <MenuFlyoutItem.KeyboardAccelerators>
                                 <KeyboardAccelerator Modifiers="Menu" Key="F4"/>
                             </MenuFlyoutItem.KeyboardAccelerators>
@@ -607,5 +616,10 @@
                 </InfoBar.ActionButton>
             </InfoBar>
         </Grid>
+
+        <!-- The Getting Started wizard takes the console's place here, crossfading
+             with it (MainWindow.Onboarding.cs). -->
+        <ContentControl x:Name="OnboardingHost" Grid.Row="1" Visibility="Collapsed"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
     </Grid>
 </Window>

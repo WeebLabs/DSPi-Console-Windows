@@ -1,0 +1,18 @@
+[
+  {
+    "version": "1.1.6-beta4",
+    "headline": "Tube modelling, output limiters, a spectrum analyser and filters you shape on the graph",
+    "items": [
+      "The Tube Modeller gives each output the character of one of 16 popular vacuum tubes, with drive, mix and an output stage that recreates how a valve amplifier's transformer meets a loudspeaker. Find it in the menu under Tube Modeller (Ctrl+Shift+D).",
+      "Every output now has its own brickwall limiter with adjustable threshold and release. Click the icon under an output's mute button to switch it on, or right-click it for settings. Linked outputs share their limiter settings.",
+      "A spectrum analyser shows the sound on any input or output as it plays: behind the response graph, as bars under it, and in its own window (Ctrl+Shift+A). The device does the measuring, so it works with every source, including S/PDIF, ADAT and I2S.",
+      "The Subharmonic Synthesizer adds a new octave below the bass, for recordings that are light on low end (Ctrl+Shift+S).",
+      "Filters can now be edited directly on the response graph. Drag a band's dot to change its frequency and gain, scroll to change its width, and use the card beside it to pick a shape.",
+      "Console now carries the matching firmware and installs it for you from File > Update Firmware. If a connected device runs a different version, a banner offers the update.",
+      "A setup wizard on first launch walks you through installing DSPi on a Pico. You can skip it, and run it again from Help in the menu.",
+      "Control Surfaces can now switch auxiliary outputs: a relay, lamp or amplifier trigger on a spare GPIO pin.",
+      "Dashboard cards sit in a grid that uses the width of the window. Choose Auto or one to three per row from the gear on any card.",
+      "The tool windows have been redesigned, with their controls and graphs side by side."
+    ]
+  }
+]

@@ -13,6 +13,25 @@ public class AppSettings
 
     public bool ShowGraphGlow { get; set; } = true;
 
+    // ── Onboarding (Services/Onboarding.cs) and What's New ──
+    // Null means never written, which is how a first onboarding launch is told
+    // apart from a returning user.
+    public List<string>? OnboardingCompletedStepIds { get; set; }
+    public string? OnboardingLastSeenVersion { get; set; }
+    public bool? OnboardingTourDeclined { get; set; }
+    public DateTime? OnboardingFirstLaunch { get; set; }
+    public bool OnboardingSimulateFreshInstall { get; set; }
+    /// <summary>Developer override, applied once: "fresh", "existing",
+    /// "declined" or "updater:1.1.6".</summary>
+    public string? OnboardingCohortOverride { get; set; }
+    public bool OnboardingForceWizard { get; set; }
+    public string? WhatsNewLastShownVersion { get; set; }
+
+    /// <summary>Whether this run found a settings file: the app had been used
+    /// before. Read once at launch to tell an existing user from a new one.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool LoadedFromFile { get; private set; }
+
     /// <summary>The Tube Modeller window shows every control (Advanced) rather
     /// than the tube, drive and mix (Basic).</summary>
     public bool TubeModellerAdvanced { get; set; }
@@ -163,7 +182,9 @@ public class AppSettings
             if (File.Exists(SettingsPath))
             {
                 var json = File.ReadAllText(SettingsPath);
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                var loaded = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                loaded.LoadedFromFile = true;
+                return loaded;
             }
         }
         catch

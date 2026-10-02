@@ -114,13 +114,7 @@ public sealed class FirmwareUpdateWindow : Window
     private static void Place(Grid g, FrameworkElement e, int row) { Grid.SetRow(e, row); g.Children.Add(e); }
     private static Border Rule() => new() { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] };
 
-    /// <summary>The rounded panel every status and summary card sits on.</summary>
-    private static Border Card(UIElement child, Thickness padding) => new()
-    {
-        Child = child, Padding = padding, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-        Background = new SolidColorBrush(ToolWindowChrome.PanelColor),
-        BorderBrush = new SolidColorBrush(Color.FromArgb(51, 128, 128, 128)),
-    };
+    private static Border Card(UIElement child, Thickness padding) => FirmwareInstallUi.Card(child, padding);
 
     private FrameworkElement BuildHeader()
     {
@@ -190,23 +184,8 @@ public sealed class FirmwareUpdateWindow : Window
         }
     }
 
-    private FrameworkElement ValueRow(string label, string value, bool secondary)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        row.Children.Add(new TextBlock
-        {
-            Text = label.ToUpperInvariant(), Width = 120, FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-            Foreground = _secondary, VerticalAlignment = VerticalAlignment.Center,
-        });
-        var text = new TextBlock
-        {
-            Text = value, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
-            FontFamily = new FontFamily("Cascadia Code, Consolas"), VerticalAlignment = VerticalAlignment.Center,
-        };
-        if (secondary) text.Foreground = _secondary;
-        row.Children.Add(text);
-        return row;
-    }
+    private static FrameworkElement ValueRow(string label, string value, bool secondary) =>
+        FirmwareInstallUi.ValueRow(label, value, secondary);
 
     // ── Step strip: Prepare, Write, Verify, Done ──
 
@@ -218,49 +197,10 @@ public sealed class FirmwareUpdateWindow : Window
         _ => 0,
     };
 
-    private void RefreshSteps()
-    {
-        string[] labels = { "Prepare", "Write", "Verify", "Done" };
-        int current = CurrentStep, last = labels.Length - 1;
-        _steps.Children.Clear();
-        _steps.ColumnDefinitions.Clear();
-        _steps.Padding = new Thickness(8, 0, 8, 0);
-        // A failure keeps the strip but takes the emphasis off it; the card
-        // tells the story.
-        _steps.Opacity = _installer.State is FirmwareInstallState.Failed ? 0.4 : 1;
-        var faint = Color.FromArgb(64, 128, 128, 128);
-        for (int i = 0; i < labels.Length; i++)
-        {
-            if (i > 0)
-            {
-                _steps.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var connector = new Rectangle
-                {
-                    Height = 2, Margin = new Thickness(4, 6, 4, 0), VerticalAlignment = VerticalAlignment.Top,
-                    Fill = new SolidColorBrush(i <= current ? Color.FromArgb(153, _accent.R, _accent.G, _accent.B) : Color.FromArgb(51, 128, 128, 128)),
-                };
-                Grid.SetColumn(connector, _steps.ColumnDefinitions.Count - 1);
-                _steps.Children.Add(connector);
-            }
-            _steps.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
-            Color fill = i < current ? _accent : i == current ? (current == last ? Green : _accent) : faint;
-            var dot = new Grid { Width = 14, Height = 14, HorizontalAlignment = HorizontalAlignment.Center };
-            dot.Children.Add(new Ellipse { Fill = new SolidColorBrush(fill) });
-            if (i < current || (i == last && current == last))
-                dot.Children.Add(new FontIcon { Glyph = "", FontSize = 8, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
-            var stop = new StackPanel { Spacing = 3 };
-            stop.Children.Add(dot);
-            var label = new TextBlock
-            {
-                Text = labels[i], FontSize = 9, HorizontalAlignment = HorizontalAlignment.Center,
-                FontWeight = i == current ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
-            };
-            if (i != current) label.Foreground = _secondary;
-            stop.Children.Add(label);
-            Grid.SetColumn(stop, _steps.ColumnDefinitions.Count - 1);
-            _steps.Children.Add(stop);
-        }
-    }
+    private void RefreshSteps() => FirmwareInstallUi.FillStepStrip(_steps,
+        new[] { "Prepare", "Write", "Verify", "Done" }, CurrentStep,
+        // A failure keeps the strip but takes the emphasis off it; the card tells the story.
+        dimmed: _installer.State is FirmwareInstallState.Failed);
 
     // ── Status card ──
 
@@ -296,62 +236,20 @@ public sealed class FirmwareUpdateWindow : Window
             FirmwareInstallState.Verified v => StateCard("", new SolidColorBrush(Green), false,
                 "Update complete",
                 $"The device is back and confirmed running firmware {v.Version}.", 36),
-            FirmwareInstallState.Failed f => StateCard(f.Error.IsMundane ? "" : "", new SolidColorBrush(Orange), false,
-                f.Error.IsMundane ? "Not quite ready" : "The update did not complete",
-                f.Error.Message),
+            FirmwareInstallState.Failed f => FirmwareInstallUi.FailureCard(f.Error),
             _ => null,
         };
     }
 
-    /// <summary>One centred state: a still icon when the next move is the
-    /// user's, a spinner when the app or the board is doing the work.</summary>
-    private Border StateCard(string? glyph, Brush tint, bool spinning, string title, string message, double iconSize = 28)
-    {
-        var stack = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        if (spinning || glyph == null)
-            stack.Children.Add(new ProgressRing { IsActive = true, Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center });
-        else
-            stack.Children.Add(new FontIcon { Glyph = glyph, FontSize = iconSize, Foreground = tint, HorizontalAlignment = HorizontalAlignment.Center });
-        stack.Children.Add(new TextBlock { Text = title, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center });
-        stack.Children.Add(new TextBlock
-        {
-            Text = message, FontSize = 11, Foreground = _secondary, TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center, MaxWidth = 340, HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        return Card(stack, new Thickness(14));
-    }
+    private static Border StateCard(string? glyph, Brush tint, bool spinning, string title, string message, double iconSize = 28) =>
+        FirmwareInstallUi.StateCard(glyph, tint, spinning, title, message, iconSize);
 
-    /// <summary>The write: who, what, how far, and a line saying the
-    /// alarming-looking ending (the drive vanishing) is the normal one.</summary>
     private Border WritingCard(double fraction)
     {
-        var stack = new Grid { RowSpacing = 10 };
-        foreach (var h in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto })
-            stack.RowDefinitions.Add(new RowDefinition { Height = h });
-        var title = new Grid();
-        title.Children.Add(new TextBlock { Text = "Writing firmware", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        _writePercent = new TextBlock
-        {
-            Text = $"{Math.Round(fraction * 100)}%", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
-            FontFamily = new FontFamily("Cascadia Code, Consolas"), Foreground = _secondary, HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        title.Children.Add(_writePercent);
-        stack.Children.Add(title);
-        _writeBar = new ProgressBar { Minimum = 0, Maximum = 100, Value = fraction * 100 };
-        Place(stack, _writeBar, 1);
-        var facts = new StackPanel { Spacing = 4, Margin = new Thickness(0, 2, 0, 0) };
-        if (_lastSeenChip is { } chip) facts.Children.Add(ValueRow("Board", chip.DisplayName(), false));
-        facts.Children.Add(ValueRow("Firmware", Bundled, false));
-        Place(stack, facts, 2);
-        var note = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        note.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = _secondary, VerticalAlignment = VerticalAlignment.Top });
-        note.Children.Add(new TextBlock
-        {
-            Text = "Near the end the board restarts itself and its drive disappears. That is normal; do not unplug it.",
-            FontSize = 10, Foreground = _secondary, TextWrapping = TextWrapping.Wrap, MaxWidth = 380,
-        });
-        Place(stack, note, 4);
-        return Card(stack, new Thickness(14));
+        var (card, bar, percent) = FirmwareInstallUi.WritingCard(fraction, _lastSeenChip?.DisplayName(), Bundled);
+        _writeBar = bar;
+        _writePercent = percent;
+        return card;
     }
 
     // ── Hints ──
@@ -443,6 +341,8 @@ public sealed class FirmwareUpdateWindow : Window
     private void Start()
     {
         _confirmed = true;
+        // From now: a device connected before this has not been rewritten.
+        _verifier.Reset();
         // A board already in bootloader mode is the one to write; restarting
         // the connected device as well would strand it there.
         bool boardWaiting = _installer.State is FirmwareInstallState.Ready or FirmwareInstallState.WaitingForVolume;

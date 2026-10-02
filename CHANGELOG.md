@@ -2,6 +2,11 @@
 
 ## 2026-10-03
 
+### Getting started and release notes
+- A Getting Started wizard on first launch takes a new user from a blank Pico to verified DSPi firmware: Welcome, Board (find the board in bootloader mode, or update a connected one, and install the firmware this Console carries) and Done. It replaces the console until it is finished or skipped, and Help > Getting Started runs it again. Existing users are never shown it
+- What's New shows the release notes once after an update, and from Help whenever asked
+- The menu has a Help submenu: Getting Started, What's New and links to the Console and firmware on GitHub
+
 ### Dashboard layout
 - The dashboard lays its cards out in rows, using the width of a wide window: Auto fits as many cards per row as the window allows, or choose 1, 2 or 3 from the gear that appears in a card's corner on hover; the choice is remembered
 

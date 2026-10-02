@@ -349,6 +349,9 @@ public sealed partial class MainWindow : Window
 
         // Initialize AutoEQ (load database in background)
         _ = InitializeAutoEQAsync();
+
+        // The Getting Started wizard for a new user, and release notes after an update.
+        InitializeOnboarding();
     }
 
     private async Task InitializeAutoEQAsync()
@@ -4731,6 +4734,8 @@ public sealed partial class MainWindow : Window
         // device state — neither direction means anything while disconnected.
         ImportPresetMenuItem.IsEnabled = ViewModel.IsDeviceConnected;
         ExportPresetMenuItem.IsEnabled = ViewModel.IsDeviceConnected;
+        // While the wizard has the window, only Help, Settings and Exit act.
+        ApplyWizardMenuState();
     }
 
     private async void OnSaveMasterVolumeClick(object sender, RoutedEventArgs e)
@@ -4825,6 +4830,12 @@ public sealed partial class MainWindow : Window
 
     private async void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
+        // The wizard's install is a write to the board like the update window's.
+        if (_gettingStarted?.IsWriting == true)
+        {
+            args.Cancel = true;
+            return;
+        }
         // Quitting mid-write would leave the board half flashed, in bootloader mode.
         if (_firmwareUpdateWindow?.IsWriting == true)
         {

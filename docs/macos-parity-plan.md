@@ -22,7 +22,8 @@ _The Mac README is a complete user guide. Treat it as the behavioural spec, and 
 | 5 Upmixer, Matrix Mixer, Signal Generator, Statistics, Interrupt Monitor | Done 2026-10-03, committed on `tool-window-parity`; hardware test pending |
 | 6 Firmware installer and update window | Done 2026-10-03, committed on `tool-window-parity`; hardware test pending |
 | 7.1 Control Surfaces catch-up (aux outputs, grouped menu, type badge, delays, summaries, group use count) | Done 2026-10-03, committed on `tool-window-parity`; hardware test pending |
-| 7.2 Onboarding, 8 | Not started |
+| 7.2 Onboarding: coordinator, Getting Started wizard, What's New, Help menu, developer section | Done 2026-10-03, committed on `tool-window-parity`; the basics tour and first-open hints are left for when the macOS Console switches them on (it ships them disabled) |
+| 8 | Not started (dashboard layout gear done) |
 
 Notes from doing Phases 0 and 1:
 - **Delay limits:** the firmware's real limits are 42 ms (RP2350) and 21 ms (RP2040). The delay line is 2048 or 1024 samples at 48 kHz, since firmware 9ec0ca1. The macOS Console's 85 ms / 42 ms is stale too.
