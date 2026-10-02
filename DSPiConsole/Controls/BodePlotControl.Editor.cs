@@ -2,6 +2,7 @@ using DSPiConsole.Controls.GraphEditing;
 using DSPiConsole.Core.GraphEditing;
 using DSPiConsole.Core.Models;
 using DSPiConsole.Models;
+using DSPiConsole.ViewModels;
 using Microsoft.UI.Xaml;
 
 namespace DSPiConsole.Controls;
@@ -17,6 +18,11 @@ namespace DSPiConsole.Controls;
 public sealed partial class BodePlotControl
 {
     private PeqGraphEditorView? _editorView;
+    /// <summary>The linked partner of the edited input, left out of the plot's
+    /// curves while a graph edit is live, or -1. The model, which the plot draws
+    /// from, only takes the edit on release, so the partner's curve would sit
+    /// still until then; the overlay's live curve stands for both meanwhile.</summary>
+    private int _livePartnerId = -1;
     /// <summary>The live spectrum, under the grid and the curves.</summary>
     private Rta.GraphSpectrumOverlay? _spectrum;
     private bool _editingSuspended;
@@ -38,6 +44,31 @@ public sealed partial class BodePlotControl
         _rootGrid.Children.Insert(0, _spectrum);
         LayoutEditor();
         RefreshEditor(redraw: false);
+    }
+
+    private void OnGraphBandLive(int channel, int band, FilterParams p)
+    {
+        if (_viewModel == null || channel != _editedChannelId || _livePartnerId >= 0) return;
+        if (!_viewModel.IsInputPairLinked(channel)) return;
+        _livePartnerId = MainViewModel.GetLinkedInputChannel(channel);
+        Redraw(gridChanged: true);
+    }
+
+    private void OnGraphLiveEnded(int channel)
+    {
+        if (_livePartnerId < 0) return;
+        // The commit follows this call; once it has updated the targets, the
+        // partner comes back already at its new curve rather than animating
+        // there from the stale one.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            int partner = _livePartnerId;
+            if (partner < 0) return;
+            _livePartnerId = -1;
+            if (_targetMagnitudes.TryGetValue(partner, out var target) && _currentMagnitudes.TryGetValue(partner, out var current))
+                Array.Copy(target, current, NumPoints);
+            Redraw(gridChanged: true);
+        });
     }
 
     /// <summary>Releases the spectrum's subscription for good. The pop-out

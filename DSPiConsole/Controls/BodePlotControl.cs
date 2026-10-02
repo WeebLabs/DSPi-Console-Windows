@@ -184,6 +184,8 @@ public sealed partial class BodePlotControl : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.MatrixOutputGainChanged += OnOutputGainChanged;
             _viewModel.InputPreampExtChanged += OnPreampExtChanged;
+            _viewModel.GraphBandLive += OnGraphBandLive;
+            _viewModel.GraphLiveEnded += OnGraphLiveEnded;
             AppSettings.Instance.SettingsChanged += OnSettingsChanged;
 
             foreach (var channel in Channel.All)
@@ -218,7 +220,10 @@ public sealed partial class BodePlotControl : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.MatrixOutputGainChanged -= OnOutputGainChanged;
             _viewModel.InputPreampExtChanged -= OnPreampExtChanged;
+            _viewModel.GraphBandLive -= OnGraphBandLive;
+            _viewModel.GraphLiveEnded -= OnGraphLiveEnded;
         }
+        _livePartnerId = -1;
         AppSettings.Instance.SettingsChanged -= OnSettingsChanged;
     }
 
@@ -727,7 +732,8 @@ public sealed partial class BodePlotControl : UserControl
     /// Visible channels grouped by identical curves: several channels with the
     /// same response are drawn as one line with a colour gradient (macOS
     /// Console). The channel being edited on the graph is left out — the editor
-    /// overlay draws it, curve and all.
+    /// overlay draws it, curve and all — and so is its linked partner while an
+    /// edit is live (<see cref="_livePartnerId"/>).
     /// </summary>
     private List<List<int>> CurveGroups()
     {
@@ -736,7 +742,7 @@ public sealed partial class BodePlotControl : UserControl
         foreach (var channel in Channel.All)
         {
             var id = (int)channel.Id;
-            if (id == _editedChannelId || !IsChannelVisible(channel)) continue;
+            if (id == _editedChannelId || id == _livePartnerId || !IsChannelVisible(channel)) continue;
             if (!_currentMagnitudes.TryGetValue(id, out var mags)) continue;
             var home = groups.FirstOrDefault(g => SameCurve(_currentMagnitudes[g[0]], mags));
             if (home != null) home.Add(id); else groups.Add(new List<int> { id });
