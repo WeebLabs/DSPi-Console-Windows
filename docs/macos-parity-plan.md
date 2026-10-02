@@ -667,21 +667,21 @@ Work items:
 - Alt-click renames a channel. **Done.**
 
 **Channel pages**
-- Band list: a header row, and columns in the Mac's order.
-- Enable All | Bypass All: dim the half that would change nothing, and hide it without bypass firmware.
-- Add Clear All with a confirmation on output pages.
-- Preamp: 0.1 dB steps, typeable, and right-click resets to 0 dB.
-- Output gain: right-click resets to 0 dB.
-- Clear PEQ: no confirmation.
-- Output routing preview: click the name; a dB preset works while unrouted; active INV is orange.
-- Muted icon: red.
-- Filter type menu: slope submenus and all-pass shown as 180°/360°. This reverses the deliberate cec6ea9 flattening. **Confirmed 2026-10-03: match the Mac.**
-- Crossover family change: keep the nearest valid slope.
-- LT editor: Revert, an "Applied" status, and an orange DC-boost warning above +15 dB.
-- Paste onto a linked input also updates its partner.
-- Ctrl+C / Ctrl+V on a channel page.
-- Input Link compare: include the preamp.
-- Link memory: store it per device serial.
+- Band list: a header row, and columns in the Mac's order. **Columns reordered; header row declined 2026-10-03.**
+- Enable All | Bypass All: dim the half that would change nothing, and hide it without bypass firmware. **Done.**
+- Add Clear All with a confirmation on output pages. **Done.**
+- Preamp: 0.1 dB steps, typeable, and right-click resets to 0 dB. **Done.**
+- Output gain: right-click resets to 0 dB. **Done.**
+- Clear PEQ: no confirmation. **Done.**
+- Output routing preview: click the name; a dB preset works while unrouted; active INV is orange. **Done.**
+- Muted icon: red. **Done.**
+- Filter type menu: slope submenus and all-pass shown as 180°/360°. This reverses the deliberate cec6ea9 flattening. **Confirmed 2026-10-03: match the Mac. Done.**
+- Crossover family change: keep the nearest valid slope. **Done.**
+- LT editor: Revert, an "Applied" status, and an orange DC-boost warning above +15 dB. **Done.**
+- Paste onto a linked input also updates its partner. **Done.**
+- Ctrl+C / Ctrl+V on a channel page. **Done.**
+- Input Link compare: include the preamp. **Done.**
+- Link memory: store it per device serial. **Done.**
 
 **Presets**
 - Copy to… asks about unsaved changes.

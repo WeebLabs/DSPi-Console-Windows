@@ -2,6 +2,21 @@
 
 ## 2026-10-03
 
+### Channel pages
+- In the band list, gain now comes before Q, as on the macOS Console
+- The filter type menu groups the shelves, cuts and all-pass into submenus by slope (6 or 12 dB/oct; all-pass 180 or 360 degrees)
+- Enable All and Bypass All dim when they would change nothing, and are hidden on firmware without per-band bypass
+- Output pages have Clear All, which resets every band on the page after asking
+- Changing a crossover's family keeps the nearest slope it offers (Butterworth 3rd order to Linkwitz-Riley gives LR2)
+- Input preamp moves in 0.1 dB steps, can be typed, and right-click resets it to 0 dB; right-click on an output's gain or delay resets it to 0
+- "Clear PEQ" (or "Clear 1/2 PEQ" on a linked pair) clears an input's bands without asking
+- On an output page, clicking an input's name connects or disconnects it, its level can be set before connecting (right-click for 0 dB), and an active INV is orange
+- A muted output's icon is red
+- The Linkwitz Transform editor shows the DC boost in orange past +15 dB, whether the values are applied, and has Revert
+- Ctrl+C and Ctrl+V copy and paste a channel page's parameters; pasting onto a linked input updates its partner too, and bands past the copied ones are cleared
+- Linking an input pair also compares (and copies) the preamp
+- Input pair links are remembered per device
+
 ### Main window and Settings polish
 - Dashboard filter rows use the macOS Console's codes: HC and LC for the cuts, with a 1 for the first-order (6 dB/oct) variant, and show Q only for peaking bands
 - Hovering the connection dot says whether the device is connected, the last connection error, or how to retry

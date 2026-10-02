@@ -2221,8 +2221,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void SetInputPairLinked(int pair, bool value)
     {
         if (pair == 0) MasterPeqLinked = value;
-        else if (pair is >= 1 and <= 3) _inputPairLinkedExt[pair - 1] = value;
+        else if (pair is >= 1 and <= 3)
+        {
+            if (_inputPairLinkedExt[pair - 1] == value) return;
+            _inputPairLinkedExt[pair - 1] = value;
+            InputPairLinksChanged?.Invoke();
+        }
     }
+
+    /// <summary>A pair was linked or unlinked, from the link toggle, a preset
+    /// or a restore; the window stores the device's links on it.</summary>
+    public event Action? InputPairLinksChanged;
+
+    partial void OnMasterPeqLinkedChanged(bool value) => InputPairLinksChanged?.Invoke();
 
     /// <summary>True when this channel is an input whose stereo pair is linked.</summary>
     public bool IsInputPairLinked(int channelId)
@@ -2253,6 +2264,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         for (int i = 0; i < a.Count; i++)
             if (!a[i].Equals(b[i])) return true;
         return false;
+    }
+
+    /// <summary>Whether a pair's input trims differ (by more than the 0.05 dB
+    /// a field can show). Linking copies the trim with the filters, so it is
+    /// part of what the link toggle asks about, as on the macOS Console.</summary>
+    public bool InputPairPreampsDiffer(int channelId)
+    {
+        int other = GetLinkedInputChannel(channelId);
+        return Math.Abs(InputPreampAt(InputWireFromId(channelId)) - InputPreampAt(InputWireFromId(other))) > 0.05f;
     }
 
     /// <summary>
@@ -2489,8 +2509,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var targetId = (int)target.Id;
 
-        // Filters are universal — always paste (deep-cloned)
-        SetAllFilters(targetId, _channelClipboard.Filters.Select(fp => fp.Clone()).ToList());
+        // Filters are universal, always pasted (deep-cloned). Bands past the
+        // clipboard's are reset to flat, so the target ends up exactly as the
+        // source was; a linked input's partner gets the same, as on the macOS
+        // Console.
+        int bandCount = _channelData.TryGetValue(targetId, out var targetBands) ? targetBands.Count : 0;
+        List<FilterParams> Bands() => Enumerable.Range(0, bandCount)
+            .Select(i => i < _channelClipboard.Filters.Count
+                ? _channelClipboard.Filters[i].Clone()
+                : new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f))
+            .ToList();
+        SetAllFilters(targetId, Bands());
+        if (!target.IsOutput && IsInputPairLinked(targetId))
+            SetAllFilters(GetLinkedInputChannel(targetId), Bands());
 
         // Delay, gain, mute, and crossover bands are output-only — paste only
         // when both source and target are outputs.

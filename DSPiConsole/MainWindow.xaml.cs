@@ -43,7 +43,7 @@ public sealed partial class MainWindow : Window
     private int _filterPageChannelId = -1;
     private Slider? _inputPreampSlider;
     private SliderDrag? _inputPreampDrag;
-    private TextBlock? _inputPreampValueText;
+    private TextBox? _inputPreampValueText;
     private bool _isScrollAdjusting;
     private DateTime _lastFilterScrollTime = DateTime.MinValue;
     private bool _isUpdatingDelay;
@@ -354,6 +354,8 @@ public sealed partial class MainWindow : Window
 
         // The Getting Started wizard for a new user, and release notes after an update.
         InitializeOnboarding();
+        InstallChannelClipboardShortcuts();
+        ViewModel.InputPairLinksChanged += StoreDeviceLinks;
 
         // Ctrl+, opens Settings, the platform convention the macOS Console follows.
         // VirtualKey has no name for the comma key, so it is set here by code.
@@ -1284,7 +1286,7 @@ public sealed partial class MainWindow : Window
                 // which channel's bank should win — silently overwriting one
                 // would lose work the user might still want.
                 int sourceChannel = (int)channel.Id;
-                if (wantLink && ViewModel.InputPairFiltersDiffer((int)channel.Id))
+                if (wantLink && (ViewModel.InputPairFiltersDiffer((int)channel.Id) || ViewModel.InputPairPreampsDiffer((int)channel.Id)))
                 {
                     var chosen = await AskWhichFiltersToKeep(channel);
                     if (chosen == null)
@@ -1354,8 +1356,8 @@ public sealed partial class MainWindow : Window
             {
                 Minimum = -60,
                 Maximum = 10,
-                StepFrequency = 0.5,
-                SmallChange = 0.5,
+                StepFrequency = 0.1,
+                SmallChange = 0.1,
                 LargeChange = 3,
                 Value = ViewModel.InputPreampAt(wireInput),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -1370,29 +1372,57 @@ public sealed partial class MainWindow : Window
                     if (Math.Abs(ViewModel.InputPreampAt(wireInput) - v) > 0.05f)
                         ViewModel.SetInputPreampAt(wireInput, v);
                 },
-                snap: v => MathF.Round(v * 2) / 2);
+                snap: v => MathF.Round(v * 10) / 10);
+            // Right-click resets to 0 dB (the linked partner follows), as on the
+            // macOS Console.
             preampSlider.RightTapped += (_, e) =>
             {
                 e.Handled = true;
-                // Snapshot only carries the master pair; extra inputs reset to 0.
-                float saved = 0f;
-                var snap = ViewModel.SavedSnapshot;
-                if (snap != null && isMaster)
-                    saved = isLeft ? snap.InputPreampLDb : snap.InputPreampRDb;
-                ViewModel.SetInputPreampAt(wireInput, saved);
+                ViewModel.SetInputPreampAt(wireInput, 0f);
             };
             Grid.SetColumn(preampSlider, 1);
             preampStrip.Children.Add(preampSlider);
 
-            var preampValue = new TextBlock
+            // Typeable: Enter or leaving the field applies, anything that does not
+            // parse puts the current value back.
+            var preampValue = new TextBox
             {
                 FontSize = 12,
                 FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Code, Consolas"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
-                MinWidth = 56,
+                Width = 64,
                 TextAlignment = TextAlignment.Right,
+                Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"],
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+            };
+            // Only text the user typed is applied: a blur alone, or a value
+            // that changed elsewhere while the field had focus, writes nothing.
+            bool preampEdited = false;
+            preampValue.TextChanged += (_, _) => { if (preampValue.FocusState != FocusState.Unfocused) preampEdited = true; };
+            void CommitPreampText()
+            {
+                if (!preampEdited) { UpdateInputPreampEditor(); return; }
+                preampEdited = false;
+                var text = preampValue.Text.Replace("dB", "").Trim();
+                if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float typed)
+                    || float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out typed))
+                    ViewModel.SetInputPreampAt(wireInput, Math.Clamp(MathF.Round(typed, 1), -60f, 10f));
+                UpdateInputPreampEditor();
+            }
+            preampValue.LostFocus += (_, _) => CommitPreampText();
+            preampValue.KeyDown += (_, e) =>
+            {
+                if (e.Key == Windows.System.VirtualKey.Enter) { e.Handled = true; FocusSink.Focus(FocusState.Programmatic); }
+                else if (e.Key == Windows.System.VirtualKey.Escape)
+                {
+                    // Cancel: put the current value back before the blur that
+                    // would otherwise apply what was typed.
+                    e.Handled = true;
+                    preampEdited = false;
+                    preampValue.Text = $"{ViewModel.InputPreampAt(wireInput):F1} dB";
+                    FocusSink.Focus(FocusState.Programmatic);
+                }
             };
             Grid.SetColumn(preampValue, 2);
             preampStrip.Children.Add(preampValue);
@@ -1420,43 +1450,26 @@ public sealed partial class MainWindow : Window
             _inputPreampValueText = preampValue;
             UpdateInputPreampEditor();
 
+            // No confirmation, as on the macOS Console: a cleared bank is a
+            // few clicks from any preset, and the label says what it covers.
+            bool clearLinked = ViewModel.IsInputPairLinked((int)channel.Id);
             var clearBtn = new Button
             {
-                Content = new TextBlock { Text = "Clear Filters", Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
+                Content = new TextBlock
+                {
+                    Text = clearLinked ? $"Clear {pairStartWire + 1}/{pairStartWire + 2} PEQ" : "Clear PEQ",
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                },
                 Height = 32,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            ToolTipService.SetToolTip(clearBtn, clearLinked
+                ? "Reset all PEQ bands on both channels of the linked pair"
+                : "Reset all PEQ bands on this input");
             clearBtn.Click += async (s, e) =>
             {
-                // Scope the clear to the current editor channel. When Link L/R
-                // is on, ViewModel.SetFilter mirrors each write to the linked
-                // channel automatically — so a single per-band loop covers
-                // both cases (linked = both channels, unlinked = just this one).
-                bool linked = ViewModel.IsInputPairLinked((int)channel.Id);
-                string content;
-                if (linked)
-                {
-                    var partner = Channel.FromId((ChannelId)ChannelMap.LinkedPartnerId((int)channel.Id));
-                    content = $"This will reset every filter band on {ViewModel.GetChannelName(channel)} and {ViewModel.GetChannelName(partner)}.";
-                }
-                else
-                {
-                    var name = ViewModel.GetChannelName(channel);
-                    content = $"This will reset every filter band on {name}.";
-                }
-
-                var dialog = new ContentDialog
-                {
-                    Title = "Clear filters?",
-                    Content = content,
-                    PrimaryButtonText = "Clear",
-                    CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = Content.XamlRoot
-                };
-
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
+                // ViewModel.SetFilter mirrors each write to a linked partner, so
+                // one loop covers both channels of a linked pair.
                 var defaultFilter = new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f);
                 int targetChannel = (int)channel.Id;
                 int bandCount = ViewModel.GetFilters(channel).Count;
@@ -1607,9 +1620,8 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 if (s is Slider sl && sl.Tag is Channel ch && sl.IsEnabled)
                 {
+                    // Right-click resets to 0 dB, as on the macOS Console.
                     float saved = 0f;
-                    if (ViewModel.SavedSnapshot?.OutputGains.TryGetValue((int)ch.Id, out var sg) == true)
-                        saved = sg;
                     _isUpdatingGain = true;
                     ViewModel.SetChannelGain((int)ch.Id, saved);
                     gainDrag.Show(saved);
@@ -1772,9 +1784,8 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 if (s is Slider sl && sl.Tag is Channel ch && sl.IsEnabled)
                 {
+                    // Right-click resets to 0 ms, as on the macOS Console.
                     float saved = 0f;
-                    if (ViewModel.SavedSnapshot?.Delays.TryGetValue((int)ch.Id, out var sd) == true)
-                        saved = sd;
                     _isUpdatingDelay = true;
                     ViewModel.SetDelay((int)ch.Id, saved);
                     delayDrag.Show(saved);
@@ -1846,14 +1857,15 @@ public sealed partial class MainWindow : Window
                     Background = routed ? new SolidColorBrush(inputCh.Color) : new SolidColorBrush(Colors.Transparent),
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                circle.Tapped += (s, e) =>
+                void ToggleRoute()
                 {
                     if (_currentOutputIndex < 0) return;
                     bool nowRouted = !ViewModel.GetMatrixRouting(capturedInput, _currentOutputIndex);
                     float g = ViewModel.GetMatrixGain(capturedInput, _currentOutputIndex);
                     bool inv = ViewModel.GetMatrixInvert(capturedInput, _currentOutputIndex);
                     ViewModel.SetMatrixRoute(capturedInput, _currentOutputIndex, nowRouted, g, inv);
-                };
+                }
+                circle.Tapped += (s, e) => ToggleRoute();
                 _currentRouteCircles[input] = circle;
                 cell.Children.Add(circle);
 
@@ -1866,6 +1878,11 @@ public sealed partial class MainWindow : Window
                     Foreground = new SolidColorBrush(routed ? inputCh.Color : dimGray),
                     VerticalAlignment = VerticalAlignment.Center
                 };
+                // The name toggles too: the circle and the name read as one control.
+                nameText.Tapped += (s, e) => ToggleRoute();
+                string outputName = ViewModel.GetChannelName(channel).Trim();
+                ToolTipService.SetToolTip(circle, routed ? $"Disconnect from {outputName}" : $"Connect to {outputName}");
+                ToolTipService.SetToolTip(nameText, routed ? $"Disconnect from {outputName}" : $"Connect to {outputName}");
                 _currentRouteNameTexts[input] = nameText;
                 cell.Children.Add(nameText);
 
@@ -1881,9 +1898,21 @@ public sealed partial class MainWindow : Window
                     Foreground = GetRouteGainBrush(routed),
                     Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"],
                     Width = 64,
-                    IsHitTestVisible = routed,
+                    // Editable while unrouted, so a level can be set before
+                    // connecting; it is stored with the route either way.
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(gainLeftMargin, 3, 0, 0)
+                };
+                gainText.RightTapped += (s, e) =>
+                {
+                    e.Handled = true;
+                    if (_currentOutputIndex < 0) return;
+                    bool en = ViewModel.GetMatrixRouting(capturedInput, _currentOutputIndex);
+                    bool inv = ViewModel.GetMatrixInvert(capturedInput, _currentOutputIndex);
+                    ViewModel.SetMatrixRoute(capturedInput, _currentOutputIndex, en, 0f, inv);
+                    // Shown now: a focused field is not refreshed, and its blur
+                    // would write the old text back.
+                    gainText.Text = "0.00 dB";
                 };
                 gainText.LostFocus += (s, e) =>
                 {
@@ -2012,6 +2041,22 @@ public sealed partial class MainWindow : Window
         // visible while the filter list scrolls. Refresh its content each rebuild.
         FilterStatusBarHost.Child = BuildFilterStatusBar(channel, showXover, xoverAvailable);
         FilterStatusBarHost.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>The PEQ row's columns: bypass dot, number, type, frequency,
+    /// gain and Q, in the macOS Console's order.</summary>
+    private static Grid BuildPeqGrid(bool bypassSupported)
+    {
+        var grid = new Grid { ColumnSpacing = 16 };
+        if (bypassSupported)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });  // Bypass toggle
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });  // Band number
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FilterTypeWidth) }); // Type
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });  // Freq
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });  // Gain
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });  // Q
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        return grid;
     }
 
     // ── On-graph editing integration ──
@@ -2148,17 +2193,8 @@ public sealed partial class MainWindow : Window
             if (ViewModel.PeqSelection.ListHovered == bandIndex) ViewModel.PeqSelection.ListHovered = null;
         };
 
-        var grid = new Grid();
         bool bypassSupported = ViewModel.BandBypassSupported;
-        if (bypassSupported)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });    // Bypass toggle
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });  // Band number
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) }); // Type
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) }); // Freq
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) }); // Q
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(54) }); // Gain
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnSpacing = 16;
+        var grid = BuildPeqGrid(bypassSupported);
         int col = 0;
 
         // Bypass toggle — firmware 1.1.4+ only. Filled dot = active band, hollow
@@ -2237,48 +2273,15 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(bandHit);
         col++;
 
-        // Filter type selector — native ComboBox, flat list. PEQ types only; the
-        // shelf/cut/all-pass first- and second-order variants are listed as separate
-        // entries labelled by slope (6 vs 12 dB). Low/high pass are labelled by what
-        // they remove ("Low Cut" = high-pass, "High Cut" = low-pass). The crossover types (32-63)
-        // share the FilterType enum but are edited on the XO page; a stray
-        // crossover type round-tripped into a PEQ slot falls back to "Off".
-        var typeItems = new List<(string label, FilterType type)>
-        {
-            ("Off", FilterType.Flat),
-            ("Peaking", FilterType.Peaking),
-            ("Low Shelf 6dB", FilterType.LowShelf1),
-            ("Low Shelf 12dB", FilterType.LowShelf),
-            ("High Shelf 6dB", FilterType.HighShelf1),
-            ("High Shelf 12dB", FilterType.HighShelf),
-            ("Low Cut 6dB", FilterType.HighPass1),
-            ("Low Cut 12dB", FilterType.HighPass),
-            ("High Cut 6dB", FilterType.LowPass1),
-            ("High Cut 12dB", FilterType.LowPass),
-            ("Notch", FilterType.Notch),
-            ("All Pass 6dB", FilterType.AllPass1),
-            ("All Pass 12dB", FilterType.AllPass),
-        };
-        // 6 dB/oct cuts (V28+): older firmware would misread the type byte.
-        // The band's own current type always stays listed so it can display.
-        if (!ViewModel.FirstOrderPassSupported)
-            typeItems.RemoveAll(t => (t.type is FilterType.LowPass1 or FilterType.HighPass1) && t.type != p.Type);
-        // Linkwitz Transform (V22+): output channels only — it's a driver/sealed-box
-        // bass-extension tool that only makes sense on outputs feeding speakers.
-        if (channel.IsOutput && ViewModel.LinkwitzTransformSupported)
-            typeItems.Add(("Linkwitz Transform", FilterType.LinkwitzTransform));
-        var typeCombo = new ComboBox { Width = 170, Tag = (channel, bandIndex), Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] };
-        int selectedTypeIndex = 0; // fall back to "Off" for stray crossover types
-        for (int i = 0; i < typeItems.Count; i++)
-        {
-            typeCombo.Items.Add(new ComboBoxItem { Content = typeItems[i].label, Tag = typeItems[i].type });
-            if (typeItems[i].type == p.Type) selectedTypeIndex = i;
-        }
-        typeCombo.SelectedIndex = selectedTypeIndex;
-        typeCombo.SelectionChanged += OnFilterTypeChanged;
-        typeCombo.Opacity = p.Bypass ? 0.4 : 1.0;
-        Grid.SetColumn(typeCombo, col);
-        grid.Children.Add(typeCombo);
+        // Filter type: the macOS Console's menu, with the shelves, cuts and
+        // all-pass as submenus by slope. A button drawn like the dropdown it
+        // replaced, so the row keeps its look. Low/high pass are named for what
+        // they remove ("Low Cut" = high-pass). A stray crossover type in a PEQ
+        // slot reads as Off.
+        var typeButton = BuildFilterTypeButton(channel, bandIndex, p);
+        typeButton.Opacity = p.Bypass ? 0.4 : 1.0;
+        Grid.SetColumn(typeButton, col);
+        grid.Children.Add(typeButton);
         col++;
 
         if (p.Type.IsLinkwitzTransform())
@@ -2307,17 +2310,6 @@ public sealed partial class MainWindow : Window
             }
             col++;
 
-            // Q
-            if (p.Type.HasQ())
-            {
-                var qPanel = CreateValueField("Q", p.Q, 44, (channel, bandIndex, "q"), decimals: 3);
-                refs.Q = (TextBox)qPanel.Children[0];
-                qPanel.Opacity = p.Bypass ? 0.4 : 1.0;
-                Grid.SetColumn(qPanel, col);
-                grid.Children.Add(qPanel);
-            }
-            col++;
-
             // Gain (for peaking, low shelf, high shelf)
             if (p.Type.HasGain())
             {
@@ -2326,6 +2318,17 @@ public sealed partial class MainWindow : Window
                 gainPanel.Opacity = p.Bypass ? 0.4 : 1.0;
                 Grid.SetColumn(gainPanel, col);
                 grid.Children.Add(gainPanel);
+            }
+            col++;
+
+            // Q (the width the header names)
+            if (p.Type.HasQ())
+            {
+                var qPanel = CreateValueField("Q", p.Q, 44, (channel, bandIndex, "q"), decimals: 3);
+                refs.Q = (TextBox)qPanel.Children[0];
+                qPanel.Opacity = p.Bypass ? 0.4 : 1.0;
+                Grid.SetColumn(qPanel, col);
+                grid.Children.Add(qPanel);
             }
         }
 
@@ -2462,10 +2465,13 @@ public sealed partial class MainWindow : Window
             else
             {
                 bool isHigh = typeCombo?.SelectedItem is ComboBoxItem ti && (bool)ti.Tag;
-                int order = slopeCombo?.SelectedItem is ComboBoxItem si ? (int)si.Tag : 4;
+                // From Off there is no slope yet (0). A family that lacks the
+                // current slope takes the nearest it has, the lower on a tie,
+                // as on the macOS Console: BW3 to LR is LR2, Off to BW is BW1.
+                int order = slopeCombo?.SelectedItem is ComboBoxItem si ? (int)si.Tag : 0;
                 var orders = CrossoverFilter.OrdersFor(selFamily);
                 if (!orders.Contains(order))
-                    order = orders.Contains(4) ? 4 : orders[0];
+                    order = orders.OrderBy(o => Math.Abs(o - order)).ThenBy(o => o).First();
                 newType = CrossoverFilter.Compose(selFamily, isHigh, order) ?? FilterType.Flat;
             }
 
@@ -2583,6 +2589,12 @@ public sealed partial class MainWindow : Window
         // ── Bulk bypass buttons (act on the visible page) ──
         var bulkPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
 
+        // The bands an Enable All or Bypass All acts on: every band with a type.
+        // A half that would change nothing is disabled (and dims), as on the
+        // macOS Console; with every band Off, both are.
+        var pageBands = showXover ? ViewModel.GetXoverFilters(channel) : ViewModel.GetFilters(channel);
+        var actionable = pageBands.Where(b => showXover ? b.Type.IsCrossover() : b.Type != FilterType.Flat).ToList();
+
         Button BulkButton(string text, bool bypass)
         {
             var b = new Button
@@ -2591,7 +2603,8 @@ public sealed partial class MainWindow : Window
                 Height = 26,
                 MinHeight = 0,
                 Padding = new Thickness(10, 0, 10, 0),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                IsEnabled = actionable.Any(x => x.Bypass != bypass),
             };
             b.Click += async (_, _) =>
             {
@@ -2621,8 +2634,51 @@ public sealed partial class MainWindow : Window
 
         bulkPanel.Children.Add(BulkButton("Enable All", false));
         bulkPanel.Children.Add(BulkButton("Bypass All", true));
+        // Per-band bypass is firmware 1.1.4+; without it there is nothing to act on.
+        bulkPanel.Visibility = ViewModel.BandBypassSupported ? Visibility.Visible : Visibility.Collapsed;
         Grid.SetColumn(bulkPanel, 0);
         grid.Children.Add(bulkPanel);
+
+        // Clear All on output pages, beside the tabs: every band of the page
+        // back to flat, after asking.
+        if (channel.IsOutput)
+        {
+            var clearAll = new Button
+            {
+                Content = new TextBlock { Text = "Clear All", FontSize = 12, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
+                Height = 26, MinHeight = 0, Padding = new Thickness(10, 0, 10, 0),
+                VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            ToolTipService.SetToolTip(clearAll, "Reset all bands");
+            clearAll.Click += async (_, _) =>
+            {
+                var confirm = new ContentDialog
+                {
+                    Title = "Clear All Bands?",
+                    Content = "Every band in this list will be reset to its default (flat) state. This cannot be undone.",
+                    PrimaryButtonText = "Clear All",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                int id = (int)channel.Id;
+                if (showXover)
+                {
+                    int n = ViewModel.GetXoverFilters(channel).Count;
+                    for (int b = 0; b < n; b++)
+                        await ViewModel.SetXoverFilter(id, b, new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f));
+                }
+                else
+                {
+                    int n = ViewModel.GetFilters(channel).Count;
+                    for (int b = 0; b < n; b++)
+                        await ViewModel.SetFilter(id, b, new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f));
+                }
+            };
+            Grid.SetColumn(clearAll, 1);
+            grid.Children.Add(clearAll);
+        }
 
         // ── PEQ | XO segmented tab ──
         var tabPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
@@ -2735,7 +2791,7 @@ public sealed partial class MainWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = "Replace the driver's sealed-box roll-off (f0, Q0) with a target (fp, Qp).",
+            Text = "Re-align a sealed woofer's rolloff from the driver's (f0, Q0) to a target (fp, Qp).",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"]
@@ -2749,30 +2805,53 @@ public sealed partial class MainWindow : Window
         content.Children.Add(LtRow("Driver", LtLabelled(f0Box, "Hz"), LtLabelled(q0Box, "Q0")));
         content.Children.Add(LtRow("Target", LtLabelled(fpBox, "Hz"), LtLabelled(qpBox, "Qp")));
 
-        var statusText = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-        content.Children.Add(statusText);
+        var secondaryBrush = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        var orangeBrush = new SolidColorBrush(Color.FromArgb(255, 255, 159, 10));
+        content.Children.Add(new Border { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] });
 
-        var cancelButton = new Button { Content = "Cancel", MinWidth = 80 };
+        // DC boost: the real low-frequency gain the transform asks for. Orange
+        // past +15 dB, where excursion and amplifier headroom start to run out.
+        var boostRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        boostRow.Children.Add(new TextBlock { Text = "DC boost", FontSize = 11, Foreground = secondaryBrush, VerticalAlignment = VerticalAlignment.Center });
+        var boostValue = new TextBlock
+        {
+            FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontFamily = new FontFamily("Cascadia Code, Consolas"), VerticalAlignment = VerticalAlignment.Center,
+        };
+        var boostWarn = new FontIcon { Glyph = "\uE7BA", FontSize = 12, Foreground = orangeBrush, VerticalAlignment = VerticalAlignment.Center };
+        boostRow.Children.Add(boostValue);
+        boostRow.Children.Add(boostWarn);
+        content.Children.Add(boostRow);
+        content.Children.Add(new TextBlock
+        {
+            Text = "Real low-frequency gain (40 x log10(f0/fp)). It uses driver excursion and amp headroom - reduce preamp or master volume to match.",
+            FontSize = 10, TextWrapping = TextWrapping.Wrap, Foreground = secondaryBrush,
+        });
+        content.Children.Add(new Border { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] });
+
+        // Status, then Revert and Apply, both only while the draft differs.
+        var statusText = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        var revertButton = new Button { Content = "Revert", MinWidth = 72 };
         var applyButton = new Button
         {
             Content = "Apply",
-            MinWidth = 80,
+            MinWidth = 72,
             Style = Application.Current.Resources.TryGetValue("AccentButtonStyle", out var accent)
                 ? accent as Style
                 : null
         };
-        var buttonRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-        buttonRow.Children.Add(cancelButton);
+        var statusRow = new Grid { ColumnSpacing = 8 };
+        statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        statusRow.Children.Add(statusText);
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        buttonRow.Children.Add(revertButton);
         buttonRow.Children.Add(applyButton);
-        content.Children.Add(buttonRow);
+        Grid.SetColumn(buttonRow, 1);
+        statusRow.Children.Add(buttonRow);
+        content.Children.Add(statusRow);
 
         var warnBrush = new SolidColorBrush(Color.FromArgb(255, 240, 180, 90));
-        var secondaryBrush = (SolidColorBrush)Application.Current.Resources["TextFillColorSecondaryBrush"];
 
         // Reads the draft out of the four boxes; false if anything is unparseable
         // or out of range. Non-short-circuiting `&` so every out value is assigned.
@@ -2782,30 +2861,56 @@ public sealed partial class MainWindow : Window
           & LtTryRead(fpBox, LtFreqMin, LtFreqMax, out fp)
           & LtTryRead(qpBox, LtQMin, LtQMax, out qp);
 
+        FilterParams? Live()
+        {
+            var filters = ViewModel.GetFilters(channel);
+            return bandIndex < filters.Count ? filters[bandIndex] : null;
+        }
+
+        void Seed()
+        {
+            if (Live() is not { } cur) return;
+            // Decimals kept, so a fractional f0 or fp reads back as applied.
+            f0Box.Text = FormatFilterValue(cur.Frequency, 2);
+            q0Box.Text = FormatFilterValue(cur.Q, 3);
+            fpBox.Text = FormatFilterValue(cur.Gain, 2);
+            qpBox.Text = FormatFilterValue(cur.Qp, 3);
+        }
+
         void RefreshPreview()
         {
-            bool valid = TryReadDraft(out float f0, out _, out float fp, out _);
-            applyButton.IsEnabled = valid;
+            bool valid = TryReadDraft(out float f0, out float q0, out float fp, out float qp);
+            var cur = Live();
+            // The macOS Console's tolerances: what the fields can show.
+            bool dirty = !valid || cur == null
+                || Math.Abs(f0 - cur.Frequency) >= 0.05f || Math.Abs(fp - cur.Gain) >= 0.05f
+                || Math.Abs(q0 - cur.Q) >= 0.0005f || Math.Abs(qp - cur.Qp) >= 1f / 512;
+            applyButton.IsEnabled = valid && dirty;
+            revertButton.IsEnabled = dirty;
 
             if (!valid)
             {
-                statusText.Text = $"f0 and fp: {LtFreqMin:F0}–{LtFreqMax:F0} Hz · Q0 and Qp: {LtQMin:0.#}–{LtQMax:0.#}";
+                boostValue.Text = "-";
+                boostWarn.Visibility = Visibility.Collapsed;
+                statusText.Text = $"f0 and fp: {LtFreqMin:F0}-{LtFreqMax:F0} Hz, Q0 and Qp: {LtQMin:0.#}-{LtQMax:0.#}";
                 statusText.Foreground = warnBrush;
                 return;
             }
 
-            double dcBoost = 40.0 * Math.Log10(f0 / fp);
-            statusText.Text = $"DC boost ≈ {dcBoost:+0.0;-0.0;0.0} dB";
-            statusText.Foreground = secondaryBrush;
+            double dcBoost = f0 > 0 && fp > 0 ? 40.0 * Math.Log10(f0 / fp) : 0;
+            boostValue.Text = dcBoost.ToString("+0.0;-0.0;+0.0", CultureInfo.InvariantCulture) + " dB";
+            bool tooMuch = dcBoost > 15;
+            boostValue.Foreground = tooMuch ? orangeBrush : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+            boostWarn.Visibility = tooMuch ? Visibility.Visible : Visibility.Collapsed;
+            statusText.Text = dirty ? "Not applied yet" : "Applied";
+            statusText.Foreground = dirty ? orangeBrush : secondaryBrush;
         }
 
         void Apply()
         {
             if (!TryReadDraft(out float f0, out float q0, out float fp, out float qp)) return;
-
-            var filters = ViewModel.GetFilters(channel);
-            if (bandIndex >= filters.Count) return;
-            var draft = filters[bandIndex].Clone();
+            if (Live() is not { } cur) return;
+            var draft = cur.Clone();
             draft.Frequency = f0;
             draft.Q = q0;
             draft.Gain = fp;   // LT carries the target frequency in the gain field
@@ -2835,28 +2940,17 @@ public sealed partial class MainWindow : Window
             };
         }
 
-        cancelButton.Click += (_, _) => flyout.Hide();
+        revertButton.Click += (_, _) => { Seed(); RefreshPreview(); };
         applyButton.Click += (_, _) => Apply();
 
         // Re-seed from the live filter each time it opens, so a discarded edit
-        // (Cancel or light dismiss) doesn't linger in the boxes.
-        flyout.Opening += (_, _) =>
-        {
-            var filters = ViewModel.GetFilters(channel);
-            if (bandIndex < filters.Count)
-            {
-                var cur = filters[bandIndex];
-                f0Box.Text = FormatFilterValue(cur.Frequency, 0);
-                q0Box.Text = FormatFilterValue(cur.Q, 3);
-                fpBox.Text = FormatFilterValue(cur.Gain, 0);
-                qpBox.Text = FormatFilterValue(cur.Qp, 3);
-            }
-            RefreshPreview();
-        };
+        // (Escape or light dismiss) doesn't linger in the boxes.
+        flyout.Opening += (_, _) => { Seed(); RefreshPreview(); };
 
         RefreshPreview();
         flyout.Content = content;
         button.Flyout = flyout;
+        ToolTipService.SetToolTip(button, "Edit Linkwitz Transform parameters (f0, Q0, fp, Qp)");
         return button;
     }
 
@@ -3100,9 +3194,72 @@ public sealed partial class MainWindow : Window
         }
         else
         {
+            RestorePairLinksForDevice();
             InitializeChannelLists();
             FadeCurves(1);
         }
+    }
+
+    /// <summary>A channel of input pair <paramref name="pair"/> (0 = 1/2), for
+    /// the link queries that take a channel.</summary>
+    private static int PairFirstChannel(int pair) =>
+        pair == 0 ? (int)ChannelId.MasterLeft : ChannelMap.ExtraInputFirstId + (pair - 1) * 2;
+
+    /// <summary>Put back the links this device had, when it has an entry; a
+    /// device seen for the first time keeps the links already on screen.</summary>
+    /// <summary>Keep the connected device's links on every change, whatever
+    /// made it (the link toggle, a preset, a restore), as on the macOS Console.</summary>
+    private void StoreDeviceLinks()
+    {
+        if (!ViewModel.IsDeviceConnected) return;
+        if (ViewModel.Device.SelectedDeviceInfo?.Serial is not { Length: > 0 } serial) return;
+        int mask = 0;
+        for (int p = 0; p < 4; p++)
+            if (ViewModel.IsInputPairLinked(PairFirstChannel(p))) mask |= 1 << p;
+        if (AppSettings.Instance.LinkedInputPairsBySerial.TryGetValue(serial, out int stored) && stored == mask) return;
+        AppSettings.Instance.LinkedInputPairsBySerial[serial] = mask;
+        AppSettings.Instance.Save();
+    }
+
+    private void RestorePairLinksForDevice()
+    {
+        if (ViewModel.Device.SelectedDeviceInfo?.Serial is not { Length: > 0 } serial) return;
+        if (!AppSettings.Instance.LinkedInputPairsBySerial.TryGetValue(serial, out int mask)) return;
+        for (int pair = 0; pair < 4; pair++)
+            ViewModel.SetInputPairLinked(pair, (mask & (1 << pair)) != 0);
+        SyncLinkedPairGradient();
+    }
+
+    /// <summary>Ctrl+C / Ctrl+V copy and paste the open channel page's
+    /// parameters, as Cmd+C / Cmd+V do on the macOS Console. A text field with
+    /// focus keeps them for text.</summary>
+    private void InstallChannelClipboardShortcuts()
+    {
+        bool TextHasFocus() => FocusManager.GetFocusedElement(Content.XamlRoot)
+            is TextBox or PasswordBox or RichEditBox or AutoSuggestBox;
+        var copy = new KeyboardAccelerator { Key = Windows.System.VirtualKey.C, Modifiers = Windows.System.VirtualKeyModifiers.Control };
+        copy.Invoked += (_, args) =>
+        {
+            if (TextHasFocus() || WizardShown || _selectedChannel == null || ChannelEditorPanel.Visibility != Visibility.Visible) return;
+            args.Handled = true;
+            ViewModel.CopyChannelParams(_selectedChannel);
+        };
+        var paste = new KeyboardAccelerator { Key = Windows.System.VirtualKey.V, Modifiers = Windows.System.VirtualKeyModifiers.Control };
+        paste.Invoked += (_, args) =>
+        {
+            if (TextHasFocus() || WizardShown || _selectedChannel == null || ChannelEditorPanel.Visibility != Visibility.Visible) return;
+            if (!ViewModel.HasChannelClipboard) return;
+            args.Handled = true;
+            ViewModel.PasteChannelParams(_selectedChannel);
+            ShowChannelEditor(_selectedChannel);
+        };
+        foreach (var a in new[] { copy, paste })
+        {
+            // Not shown as tooltips on the window's content.
+            a.ScopeOwner = null;
+            RootGrid.KeyboardAccelerators.Add(a);
+        }
+        RootGrid.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
     }
 
     /// <summary>The connection dot says what it means on hover: connected, the
@@ -3202,10 +3359,16 @@ public sealed partial class MainWindow : Window
         var firstName = ViewModel.GetChannelName(first);
         var secondName = ViewModel.GetChannelName(second);
 
+        // What differs, as on the macOS Console: linking copies filters and trim.
+        bool filters = ViewModel.InputPairFiltersDiffer((int)channel.Id);
+        bool trims = ViewModel.InputPairPreampsDiffer((int)channel.Id);
+        string what = filters && trims ? "different filters and input trims" : filters ? "different filters" : "different input trims";
         var dialog = new ContentDialog
         {
-            Title = $"{firstName} and {secondName} have different filters",
-            Content = "Linking will overwrite one channel's filters with the other's. Which would you like to keep?",
+            Title = $"{firstName} and {secondName} don't match",
+            Content = $"These inputs have {what}. Linking mirrors future edits across both channels, but it cannot merge "
+                    + "settings that already differ.\n\nChoose which channel's filters and trim to copy onto the other. "
+                    + "This overwrites the other channel and cannot be undone.",
             PrimaryButtonText = $"Keep {firstName}",
             SecondaryButtonText = $"Keep {secondName}",
             CloseButtonText = "Cancel",
@@ -3223,7 +3386,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>Persist one pair's link state to AppSettings (pair 0 keeps the
     /// legacy MasterPeqLinked key).</summary>
-    private static void PersistPairLink(int pair, bool value)
+    private void PersistPairLink(int pair, bool value)
     {
         if (pair == 0)
         {
@@ -3350,7 +3513,8 @@ public sealed partial class MainWindow : Window
         if (_inputPreampDrag?.IsDragging == true) return;
         if (Math.Abs(_inputPreampSlider.Value - v) > 0.05)
             _inputPreampDrag?.Show(v);
-        _inputPreampValueText.Text = $"{v:F1} dB";
+        if (_inputPreampValueText.FocusState == FocusState.Unfocused)
+            _inputPreampValueText.Text = $"{v:F1} dB";
     }
 
     /// <summary>Wire input index (0..7) for an input channel: Master L/R → 0/1,
@@ -3864,8 +4028,10 @@ public sealed partial class MainWindow : Window
         nameText.Foreground = new SolidColorBrush(routed ? inputCh.Color : dimGray);
 
         var gainText = _currentRouteGainTexts[input];
-        gainText.IsHitTestVisible = routed;
         gainText.Foreground = GetRouteGainBrush(routed);
+        string outputName = _selectedChannel != null ? ViewModel.GetChannelName(_selectedChannel).Trim() : $"Out {output + 1}";
+        ToolTipService.SetToolTip(circle, routed ? $"Disconnect from {outputName}" : $"Connect to {outputName}");
+        ToolTipService.SetToolTip(nameText, routed ? $"Disconnect from {outputName}" : $"Connect to {outputName}");
         if (gainText.FocusState == FocusState.Unfocused)
             gainText.Text = gain == 0f ? "0.00 dB" : string.Format(CultureInfo.InvariantCulture, "{0:+0.00;-0.00} dB", gain);
 
@@ -3880,7 +4046,8 @@ public sealed partial class MainWindow : Window
     private static Brush GetRouteInvBrush(bool routed, bool inverted)
     {
         if (!routed) return new SolidColorBrush(Color.FromArgb(30, 200, 200, 220));
-        return new SolidColorBrush(inverted ? Color.FromArgb(175, 255, 255, 255) : Color.FromArgb(60, 200, 200, 220));
+        // An active INV is orange, as on the macOS Console.
+        return new SolidColorBrush(inverted ? Color.FromArgb(255, 255, 159, 10) : Color.FromArgb(60, 200, 200, 220));
     }
 
     private void RefreshDashboardHeaderStats(Channel channel)
@@ -3914,8 +4081,9 @@ public sealed partial class MainWindow : Window
         if (btn.Content is FontIcon icon)
         {
             icon.Glyph = muted ? "\uE74F" : "\uE767";
+            // Red when muted, as on the macOS Console.
             icon.Foreground = muted
-                ? new SolidColorBrush(Color.FromArgb(255, 80, 80, 80))
+                ? new SolidColorBrush(Color.FromArgb(255, 255, 69, 58))
                 : new SolidColorBrush(Color.FromArgb(200, 200, 200, 200));
         }
     }
@@ -3935,11 +4103,85 @@ public sealed partial class MainWindow : Window
             ApplyMuteButtonState(_currentMuteButton, ViewModel.GetChannelMute(channel));
     }
 
-    private void OnFilterTypeChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>The face the type button shows, as on the macOS Console.</summary>
+    private static string FilterTypeFace(FilterType t) => t switch
     {
-        if (sender is ComboBox combo && combo.Tag is (Channel channel, int bandIndex))
+        FilterType.Peaking => "Peaking",
+        FilterType.LowShelf => "Low Shelf (12dB)",
+        FilterType.LowShelf1 => "Low Shelf (6dB)",
+        FilterType.HighShelf => "High Shelf (12dB)",
+        FilterType.HighShelf1 => "High Shelf (6dB)",
+        FilterType.LowPass => "High Cut (12dB)",
+        FilterType.LowPass1 => "High Cut (6dB)",
+        FilterType.HighPass => "Low Cut (12dB)",
+        FilterType.HighPass1 => "Low Cut (6dB)",
+        FilterType.Notch => "Notch",
+        FilterType.AllPass => "All Pass (360\u00b0)",
+        FilterType.AllPass1 => "All Pass (180\u00b0)",
+        FilterType.LinkwitzTransform => "Linkwitz Transform",
+        _ => "Off",
+    };
+
+    /// <summary>Wide enough for the longest face, "Linkwitz Transform", and the chevron.</summary>
+    private const double FilterTypeWidth = 150;
+
+    private DropDownButton BuildFilterTypeButton(Channel channel, int bandIndex, FilterParams p)
+    {
+        bool firstOrderCuts = ViewModel.FirstOrderPassSupported;
+        var groups = new List<(string Title, (string Label, FilterType Type)[] Variants)>
         {
-            if (combo.SelectedItem is ComboBoxItem item && item.Tag is FilterType newType)
+            ("Off", new[] { ("Off", FilterType.Flat) }),
+            ("Peaking", new[] { ("Peaking", FilterType.Peaking) }),
+            ("Low Shelf", new[] { ("6 dB/oct", FilterType.LowShelf1), ("12 dB/oct", FilterType.LowShelf) }),
+            ("High Shelf", new[] { ("6 dB/oct", FilterType.HighShelf1), ("12 dB/oct", FilterType.HighShelf) }),
+            // 6 dB/oct cuts (V28+): older firmware would misread the type byte,
+            // though the band's own type always stays listed so it can display.
+            ("High Cut", new[] { ("6 dB/oct", FilterType.LowPass1), ("12 dB/oct", FilterType.LowPass) }
+                .Where(v => firstOrderCuts || v.Item2 != FilterType.LowPass1 || p.Type == FilterType.LowPass1).ToArray()),
+            ("Low Cut", new[] { ("6 dB/oct", FilterType.HighPass1), ("12 dB/oct", FilterType.HighPass) }
+                .Where(v => firstOrderCuts || v.Item2 != FilterType.HighPass1 || p.Type == FilterType.HighPass1).ToArray()),
+            ("Notch", new[] { ("Notch", FilterType.Notch) }),
+            ("All Pass", new[] { ("180\u00b0", FilterType.AllPass1), ("360\u00b0", FilterType.AllPass) }),
+        };
+        // Linkwitz Transform (V22+): outputs only, a sealed-box bass tool.
+        if (channel.IsOutput && ViewModel.LinkwitzTransformSupported)
+            groups.Add(("Linkwitz Transform", new[] { ("Linkwitz Transform", FilterType.LinkwitzTransform) }));
+
+        var current = p.Type.IsCrossover() ? FilterType.Flat : p.Type;
+        var flyout = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        ToggleMenuFlyoutItem Item(string text, FilterType type)
+        {
+            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = type == current };
+            item.Click += (_, _) =>
+            {
+                if (type == current) { item.IsChecked = true; return; }
+                ApplyFilterType(channel, bandIndex, type);
+            };
+            return item;
+        }
+        foreach (var (title, variants) in groups)
+        {
+            // A family with one variant left is a plain item under its own name.
+            if (variants.Length == 1) { flyout.Items.Add(Item(title, variants[0].Type)); continue; }
+            var sub = new MenuFlyoutSubItem { Text = title };
+            if (variants.Any(v => v.Type == current))
+                sub.Icon = new FontIcon { Glyph = "\uE73E" };
+            foreach (var (label, type) in variants) sub.Items.Add(Item(label, type));
+            flyout.Items.Add(sub);
+        }
+        return new DropDownButton
+        {
+            Content = FilterTypeFace(current),
+            Width = FilterTypeWidth,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Flyout = flyout,
+        };
+    }
+
+    private void ApplyFilterType(Channel channel, int bandIndex, FilterType newType)
+    {
+        {
             {
                 var filters = ViewModel.GetFilters(channel);
                 if (bandIndex < filters.Count)

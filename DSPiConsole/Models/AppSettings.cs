@@ -134,6 +134,10 @@ public class AppSettings
 
     // PEQ link for the extra input pairs: [0]=IN3/4, [1]=IN5/6, [2]=IN7/8
     public bool[] InputPairLinkedExt { get; set; } = new bool[3];
+    /// <summary>Which input pairs are linked, per device serial: bit n is pair
+    /// n (1/2, 3/4, 5/6, 7/8), as on the macOS Console. A device with no entry
+    /// takes the global flags above.</summary>
+    public Dictionary<string, int> LinkedInputPairsBySerial { get; set; } = new();
 
     // Per-channel gain/delay lock state (key = ChannelId int)
     public Dictionary<int, bool> GainLocked { get; set; } = new();
