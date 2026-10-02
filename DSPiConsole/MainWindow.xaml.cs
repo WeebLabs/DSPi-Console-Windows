@@ -2781,9 +2781,22 @@ public sealed partial class MainWindow : Window
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         };
 
-        var flyout = new Flyout();
+        // A fixed width with no sideways scrolling: the presenter's default lets
+        // content scroll horizontally, so the notes never wrapped and the panel
+        // panned left and right.
+        var flyout = new Flyout
+        {
+            FlyoutPresenterStyle = new Style(typeof(FlyoutPresenter))
+            {
+                Setters =
+                {
+                    new Setter(ScrollViewer.HorizontalScrollModeProperty, ScrollMode.Disabled),
+                    new Setter(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled),
+                },
+            },
+        };
 
-        var content = new StackPanel { Spacing = 10, MinWidth = 280 };
+        var content = new StackPanel { Spacing = 10, Width = 300 };
         content.Children.Add(new TextBlock
         {
             Text = "Linkwitz Transform",
@@ -2822,11 +2835,6 @@ public sealed partial class MainWindow : Window
         boostRow.Children.Add(boostValue);
         boostRow.Children.Add(boostWarn);
         content.Children.Add(boostRow);
-        content.Children.Add(new TextBlock
-        {
-            Text = "Real low-frequency gain (40 x log10(f0/fp)). It uses driver excursion and amp headroom - reduce preamp or master volume to match.",
-            FontSize = 10, TextWrapping = TextWrapping.Wrap, Foreground = secondaryBrush,
-        });
         content.Children.Add(new Border { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] });
 
         // Status, then Revert and Apply, both only while the draft differs.
