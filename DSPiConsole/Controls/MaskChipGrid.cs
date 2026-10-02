@@ -124,14 +124,16 @@ public sealed class MaskChipGrid
 
             var entry = new Chip { Button = chip, Bit = bit };
 
+            // The darker accent with white text, as the console's other toggles.
+            AccentToggle.Apply(chip);
             if (onSecondaryToggle != null)
             {
                 // Own the brushes the checked states resolve to, so the fill can be
                 // switched between accent and amber later by recolouring in place.
-                entry.Fill = new SolidColorBrush(AccentColor("AccentFillColorDefaultBrush"));
-                entry.FillPointerOver = new SolidColorBrush(AccentColor("AccentFillColorSecondaryBrush"));
-                entry.FillPressed = new SolidColorBrush(AccentColor("AccentFillColorTertiaryBrush"));
-                entry.Text = new SolidColorBrush(AccentColor("TextOnAccentFillColorPrimaryBrush"));
+                entry.Fill = new SolidColorBrush(AccentToggle.Fill);
+                entry.FillPointerOver = new SolidColorBrush(AccentToggle.FillPointerOver);
+                entry.FillPressed = new SolidColorBrush(AccentToggle.FillPressed);
+                entry.Text = new SolidColorBrush(AccentToggle.Text);
 
                 chip.Resources["ToggleButtonBackgroundChecked"] = entry.Fill;
                 chip.Resources["ToggleButtonBackgroundCheckedPointerOver"] = entry.FillPointerOver;
@@ -153,9 +155,6 @@ public sealed class MaskChipGrid
         Root = (Panel?)grid ?? stack!;
     }
 
-    private static Color AccentColor(string key) =>
-        Application.Current.Resources[key] is SolidColorBrush b ? b.Color : Microsoft.UI.Colors.Transparent;
-
     /// <summary>Reflect an authoritative mask into the chip states without firing callbacks.</summary>
     public void SetMask(uint mask)
     {
@@ -173,10 +172,10 @@ public sealed class MaskChipGrid
         {
             if (c.Fill == null) continue;
             bool on = (mask & (1u << c.Bit)) != 0;
-            c.Fill.Color = on ? Amber : AccentColor("AccentFillColorDefaultBrush");
-            c.FillPointerOver!.Color = on ? AmberPointerOver : AccentColor("AccentFillColorSecondaryBrush");
-            c.FillPressed!.Color = on ? AmberPressed : AccentColor("AccentFillColorTertiaryBrush");
-            c.Text!.Color = on ? AmberText : AccentColor("TextOnAccentFillColorPrimaryBrush");
+            c.Fill.Color = on ? Amber : AccentToggle.Fill;
+            c.FillPointerOver!.Color = on ? AmberPointerOver : AccentToggle.FillPointerOver;
+            c.FillPressed!.Color = on ? AmberPressed : AccentToggle.FillPressed;
+            c.Text!.Color = on ? AmberText : AccentToggle.Text;
         }
     }
 }

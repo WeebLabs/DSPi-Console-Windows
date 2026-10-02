@@ -1259,24 +1259,21 @@ public sealed partial class MainWindow : Window
                     Spacing = 6,
                     Children =
                     {
-                        new FontIcon { Glyph = "\uE71B", FontSize = 14, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
-                        new TextBlock { Text = linkLabel, FontSize = 12, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] }
+                        new FontIcon { Glyph = "\uE71B", FontSize = 14 },
+                        new TextBlock { Text = linkLabel, FontSize = 12 }
                     }
                 },
                 IsChecked = ViewModel.IsInputPairLinked((int)channel.Id),
                 Height = 32,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            // Replace the default (blinding) accent fill on the checked state
-            // with the tertiary accent brush, which is derived from the system
-            // accent color but with lower intensity so it updates automatically
-            // when the user changes their system accent.
-            linkBtn.Resources["ToggleButtonBackgroundChecked"] = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"];
-            linkBtn.Resources["ToggleButtonBackgroundCheckedPointerOver"] = (Brush)Application.Current.Resources["AccentFillColorSecondaryBrush"];
-            linkBtn.Resources["ToggleButtonBackgroundCheckedPressed"] = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"];
-            linkBtn.Resources["ToggleButtonForegroundChecked"] = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-            linkBtn.Resources["ToggleButtonForegroundCheckedPointerOver"] = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-            linkBtn.Resources["ToggleButtonForegroundCheckedPressed"] = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+            // Grey while unlinked; linked, the darker accent with white text.
+            // The content takes the button's foreground, so both states apply.
+            var linkIdleText = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+            linkBtn.Resources["ToggleButtonForeground"] = linkIdleText;
+            linkBtn.Resources["ToggleButtonForegroundPointerOver"] = linkIdleText;
+            linkBtn.Resources["ToggleButtonForegroundPressed"] = linkIdleText;
+            AccentToggle.Apply(linkBtn);
             linkBtn.Click += async (s, e) =>
             {
                 bool wantLink = linkBtn.IsChecked == true;
@@ -2695,12 +2692,8 @@ public sealed partial class MainWindow : Window
                 IsChecked = isXoverTab == showXover,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            // Calmer checked fill (system-accent-derived) instead of the default
-            // full-intensity accent — matches the Link L/R toggle treatment.
-            t.Resources["ToggleButtonBackgroundChecked"] = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"];
-            t.Resources["ToggleButtonBackgroundCheckedPointerOver"] = (Brush)Application.Current.Resources["AccentFillColorSecondaryBrush"];
-            t.Resources["ToggleButtonBackgroundCheckedPressed"] = (Brush)Application.Current.Resources["AccentFillColorTertiaryBrush"];
-            t.Resources["ToggleButtonForegroundChecked"] = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+            // The darker accent with white text, as the Link Pair toggle.
+            AccentToggle.Apply(t);
             t.Click += (_, _) =>
             {
                 _filterPageIsXover = isXoverTab;
