@@ -152,10 +152,34 @@ public sealed partial class SettingsWindow : Window
     // after the user picks Apply / Discard, we don't want the Closing
     // handler to re-prompt. Set _allowClose=true just before the call.
     private bool _allowClose;
+    /// <summary>A pending-changes prompt is on screen.</summary>
+    private bool _confirming;
+
+    /// <summary>
+    /// Close from code (the main window's Settings gear), asking about pending
+    /// changes exactly as the close button does: <see cref="Window.Close"/>
+    /// does not raise AppWindow.Closing, so calling it directly would drop
+    /// staged changes without a word. A second request while the prompt is
+    /// showing does nothing.
+    /// </summary>
+    internal async void RequestClose()
+    {
+        if (_confirming) return;
+        if (Tracker.Count == 0)
+        {
+            _allowClose = true;
+            Close();
+            return;
+        }
+        Activate();
+        try { await ConfirmCloseAsync(); }
+        catch (Exception ex) { WriteCrashLog("SettingsWindow.RequestClose", ex); }
+    }
 
     private async void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_allowClose || Tracker.Count == 0) return;
+        if (_confirming) { args.Cancel = true; return; }
 
         // We need a synchronous decision here, but ContentDialog is
         // async. The pattern: cancel the close, await the user's
@@ -172,6 +196,13 @@ public sealed partial class SettingsWindow : Window
     }
 
     private async Task ConfirmCloseAsync()
+    {
+        _confirming = true;
+        try { await ConfirmCloseCoreAsync(); }
+        finally { _confirming = false; }
+    }
+
+    private async Task ConfirmCloseCoreAsync()
     {
         // Same flash/global clarifier as the InfoBar in SettingsShell.xaml.
         // Settings tracked here are all device-flash writes (master volume

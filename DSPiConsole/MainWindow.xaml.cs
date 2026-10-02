@@ -93,6 +93,8 @@ public sealed partial class MainWindow : Window
     private int _selectedChannelIndex = 0;
     private readonly List<ListViewItem> _channelListItems = new();
     private readonly Dictionary<int, TextBlock> _channelNameTexts = new();
+    /// <summary>Starts the inline rename of a sidebar row, for Alt-click.</summary>
+    private readonly Dictionary<int, Action> _sidebarRenamers = new();
 
     // Inline per-channel meters: keyed by ChannelId
     private readonly Dictionary<int, HorizontalMeterBar> _channelMeters = new();
@@ -352,6 +354,15 @@ public sealed partial class MainWindow : Window
 
         // The Getting Started wizard for a new user, and release notes after an update.
         InitializeOnboarding();
+
+        // Ctrl+, opens Settings, the platform convention the macOS Console follows.
+        // VirtualKey has no name for the comma key, so it is set here by code.
+        SettingsMenuItem.KeyboardAccelerators.Add(new KeyboardAccelerator
+        {
+            Key = (Windows.System.VirtualKey)188,
+            Modifiers = Windows.System.VirtualKeyModifiers.Control,
+        });
+        SettingsMenuItem.KeyboardAcceleratorTextOverride = "Ctrl+,";
     }
 
     private async Task InitializeAutoEQAsync()
@@ -569,15 +580,17 @@ public sealed partial class MainWindow : Window
                 ShowChannelEditor(channel);
         };
 
-        var renameItem = new MenuFlyoutItem { Text = "Rename" };
-        renameItem.Click += (s, e) =>
+        void StartRename()
         {
             nameText.Visibility = Visibility.Collapsed;
             nameBox.Text = ViewModel.GetChannelName(channel);
             nameBox.Visibility = Visibility.Visible;
             nameBox.Focus(FocusState.Programmatic);
             nameBox.SelectAll();
-        };
+        }
+        _sidebarRenamers[(int)channel.Id] = StartRename;
+        var renameItem = new MenuFlyoutItem { Text = "Rename" };
+        renameItem.Click += (s, e) => StartRename();
 
         // Identify: play a short chirp on this output so the user can find the
         // physical speaker. Outputs only — the signal generator drives output
@@ -1121,7 +1134,9 @@ public sealed partial class MainWindow : Window
                 grid.Children.Add(gainPanel);
             }
 
-            if (p.Type.HasQ())
+            // Q only for a peaking band, as on the macOS Console: on a cut or a
+            // shelf it is a shape detail the row has no room to explain.
+            if (p.Type == FilterType.Peaking)
             {
                 var qPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Right };
                 qPanel.Children.Add(new TextBlock
@@ -3054,6 +3069,7 @@ public sealed partial class MainWindow : Window
     {
         var accentColor = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
         ConnectionIndicator.Fill = new SolidColorBrush(ViewModel.IsDeviceConnected ? accentColor : Colors.Red);
+        UpdateConnectionTooltip();
         UpdateDeviceSelector();
 
         if (!ViewModel.IsDeviceConnected)
@@ -3087,6 +3103,17 @@ public sealed partial class MainWindow : Window
             InitializeChannelLists();
             FadeCurves(1);
         }
+    }
+
+    /// <summary>The connection dot says what it means on hover: connected, the
+    /// last connection error, or how to retry. After the macOS Console.</summary>
+    private void UpdateConnectionTooltip()
+    {
+        string tip = ViewModel.IsDeviceConnected ? "Connected"
+            : !string.IsNullOrWhiteSpace(ViewModel.ErrorMessage) && ViewModel.ErrorMessage != "Disconnected"
+                ? ViewModel.ErrorMessage!
+                : "Not connected. Right-click here to retry.";
+        ToolTipService.SetToolTip(ConnectionIndicator, tip);
     }
 
     // Multi-device UI
@@ -3575,6 +3602,20 @@ public sealed partial class MainWindow : Window
     {
         if (sender is not ListViewItem item || item.Tag is not (Channel channel, int index))
             return;
+
+        // Alt-click renames, as Option-click does on the macOS Console, and
+        // leaves the selection alone.
+        if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
+            && _sidebarRenamers.TryGetValue((int)channel.Id, out var rename))
+        {
+            e.Handled = true;
+            // The list selected the row on the press; put the highlight back on
+            // the page that is actually showing.
+            UpdateChannelListSelection();
+            rename();
+            return;
+        }
 
         // A linked pair shares one editor page, so clicking either member of
         // the currently shown pair counts as clicking the shown channel.
@@ -5151,8 +5192,9 @@ public sealed partial class MainWindow : Window
         try
         {
             _settingsWindow = new Settings.SettingsWindow(ViewModel);
-            _settingsWindow.Closed += (s, e) => { _settingsWindow = null; };
+            _settingsWindow.Closed += (s, e) => { _settingsWindow = null; UpdateShortcutIconStates(); };
             _settingsWindow.Activate();
+            UpdateShortcutIconStates();
         }
         catch (System.Exception ex)
         {
@@ -5180,8 +5222,16 @@ public sealed partial class MainWindow : Window
         OnMatrixMixerClick(sender, new RoutedEventArgs());
     }
 
+    /// <summary>The sidebar gear toggles Settings, as on the macOS Console: a
+    /// second click closes it (through its own pending-changes prompt). The
+    /// menu item and Ctrl+, only ever open or bring it forward.</summary>
     private void OnSidebarSettingsTapped(object sender, TappedRoutedEventArgs e)
     {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.RequestClose();
+            return;
+        }
         OnSettingsClick(sender, new RoutedEventArgs());
     }
 
@@ -5264,7 +5314,7 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             SetIconColor(MatrixMixerIcon, _matrixMixerWindow != null ? _iconActiveColor : _iconDimColor);
-            SetIconColor(SettingsIcon, _iconDimColor);
+            SetIconColor(SettingsIcon, _settingsWindow != null ? _iconActiveColor : _iconDimColor);
             SetIconColor(LoudnessIcon, ViewModel.LoudnessEnabled ? _iconActiveColor : _iconDimColor);
             SetIconColor(CrossfeedIcon, ViewModel.CrossfeedEnabled ? _iconActiveColor : _iconDimColor);
             SetIconColor(PsybassIcon, ViewModel.PsybassEnabled ? _iconActiveColor : _iconDimColor);
@@ -5287,6 +5337,7 @@ public sealed partial class MainWindow : Window
         if (icon == PsybassIcon) return ViewModel.PsybassEnabled;
         if (icon == LevellerIcon) return ViewModel.LevellerEnabled;
         if (icon == StatsIcon) return _statsWindow != null;
+        if (icon == SettingsIcon) return _settingsWindow != null;
         if (icon == BypassIcon) return ViewModel.Bypass;
         return false;
     }

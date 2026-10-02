@@ -18,7 +18,7 @@
     <StackPanel Spacing="4">
 
         <controls:SettingsCard Header="DSPi Console"
-                                Description="WinUI 3 / .NET 8 application for the DSPi audio platform.">
+                                Description="USB Audio DSP Controller. Made with love by Weeb Labs.">
                     </controls:SettingsCard>
 
         <controls:SettingsCard x:Name="AppVersionCard" Header="App version">
@@ -40,6 +40,51 @@
                        FontFamily="Cascadia Code, Consolas"
                        VerticalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        </controls:SettingsCard>
+
+        <!-- Links & Support, as on the macOS Console's About page. -->
+        <TextBlock Text="Links &amp; Support" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="1,24,0,4"/>
+        <TextBlock TextWrapping="Wrap" Margin="1,0,0,8" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="DSPi Firmware and Console are free, open-source software that I develop in my spare time. Contributions of any kind - code, feedback, funding, or otherwise - are always immensely appreciated."/>
+        <controls:SettingsCard Header="YouTube" Description="https://youtube.com/weeblabs" IsClickEnabled="True" Tag="https://youtube.com/weeblabs" Click="OnLinkClick">
+            <controls:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE714;" Foreground="#FFFF3B30"/>
+            </controls:SettingsCard.HeaderIcon>
+            <controls:SettingsCard.ActionIcon>
+                <FontIcon Glyph="&#xE8A7;"/>
+            </controls:SettingsCard.ActionIcon>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="GitHub" Description="https://github.com/weeblabs" IsClickEnabled="True" Tag="https://github.com/weeblabs" Click="OnLinkClick">
+            <controls:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE943;" Foreground="#B8FFFFFF"/>
+            </controls:SettingsCard.HeaderIcon>
+            <controls:SettingsCard.ActionIcon>
+                <FontIcon Glyph="&#xE8A7;"/>
+            </controls:SettingsCard.ActionIcon>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="Discord" Description="https://discord.gg/RCyqxAQ5xS" IsClickEnabled="True" Tag="https://discord.gg/RCyqxAQ5xS" Click="OnLinkClick">
+            <controls:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE8BD;" Foreground="#FF5865F2"/>
+            </controls:SettingsCard.HeaderIcon>
+            <controls:SettingsCard.ActionIcon>
+                <FontIcon Glyph="&#xE8A7;"/>
+            </controls:SettingsCard.ActionIcon>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="Patreon" Description="https://patreon.com/weeblabs" IsClickEnabled="True" Tag="https://patreon.com/weeblabs" Click="OnLinkClick">
+            <controls:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xEB52;" Foreground="#FFFF9500"/>
+            </controls:SettingsCard.HeaderIcon>
+            <controls:SettingsCard.ActionIcon>
+                <FontIcon Glyph="&#xE8A7;"/>
+            </controls:SettingsCard.ActionIcon>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="Ko-fi" Description="https://ko-fi.com/weeblabs" IsClickEnabled="True" Tag="https://ko-fi.com/weeblabs" Click="OnLinkClick">
+            <controls:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE71B;" Foreground="#FF719EBC"/>
+            </controls:SettingsCard.HeaderIcon>
+            <controls:SettingsCard.ActionIcon>
+                <FontIcon Glyph="&#xE8A7;"/>
+            </controls:SettingsCard.ActionIcon>
         </controls:SettingsCard>
     </StackPanel>
 </settings:SettingsModule>

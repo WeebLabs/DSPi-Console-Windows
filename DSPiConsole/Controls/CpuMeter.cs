@@ -125,7 +125,7 @@ public sealed class CpuMeter : UserControl
         {
             int load = (int)e.NewValue;
             meter._valueText.Text = $"{load}%";
-            meter._meterForeground.Width = 44 * (load / 100.0);
+            meter._meterForeground.Width = 44 * (Math.Clamp(load, 0, 100) / 100.0);
             var accentColor = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
             meter._meterForeground.Background = new SolidColorBrush(
                 load > 90 ? Colors.Red : accentColor);

@@ -80,7 +80,7 @@ Windows does not break against beta4 firmware. Its bulk parser accepts V32 image
 | D2 | **Win2D.** Rendering today is XAML `Shape`s rebuilt on every tick. The Mac uses Metal for the editor overlay and the RTA. | Add `Microsoft.Graphics.Win2D` in Phase 1 for the editor layer. It is required anyway for the RTA, which runs 60 fps with 37 bands × 9 channels. | Phases 1 and 4 |
 | D3 | **Windows-only graph extras.** Crossover diamonds are editable on the graph, there is a `GraphEditingEnabled` setting, and there is a "Double-click to add a band" hint. The Mac edits PEQ only and disables graph editing on the XO tab. | Match the Mac: remove the crossover editing and the hint. Keep the setting only if you want an off switch; the Mac has none. | Phase 1 |
 | D4 | **Keyboard shortcuts.** Windows uses Ctrl+Shift+C for Crossfeed (Mac X) and Ctrl+Shift+I/E for preset import/export (on the Mac, Cmd+Shift+I is the Interrupt Monitor). Ctrl+Shift+B is bound twice. | Adopt the Mac letters for tool windows, moving preset import/export to Ctrl+O and Ctrl+Shift+S or similar. Fix the B clash either way. | Phase 0 and Phase 5 |
-| D5 | **Terminology.** Windows says "Preset File…" / "Save Preset"; the Mac says "Device Configuration…" / "Commit Parameters…". | Adopt the Mac names. They also match the README. | Phase 8 |
+| D5 | **Terminology.** Windows says "Preset File…" / "Save Preset"; the Mac says "Device Configuration…" / "Commit Parameters…". | Adopt the Mac names. They also match the README. **Decided 2026-10-03: keep the Windows names.** | Phase 8 |
 
 ---
 
@@ -660,11 +660,11 @@ Work items:
 ## Phase 8: Main window, channel page, preset and settings polish (M, about 1 week; S items)
 
 **Main window**
-- CPU meters: show C0 and C1.
+- CPU meters: show C0 and C1. **Declined 2026-10-03: keep one CPU meter.**
 - Dashboard card layout gear: Auto / 1 / 2 / 3. **Done 2026-10-03** (ahead of the rest of Phase 8; `Controls/DashboardGrid.cs`, `MainWindow.DashboardLayout.cs`).
-- Dashboard type codes: HC/LC with a first-order suffix, and Q shown only for PK.
-- Put the connection error in a tooltip.
-- Alt-click renames a channel.
+- Dashboard type codes: HC/LC with a first-order suffix, and Q shown only for PK. **Done.**
+- Put the connection error in a tooltip. **Done** (tooltip on the existing dot; the indicator stays put).
+- Alt-click renames a channel. **Done.**
 
 **Channel pages**
 - Band list: a header row, and columns in the Mac's order.
@@ -675,7 +675,7 @@ Work items:
 - Clear PEQ: no confirmation.
 - Output routing preview: click the name; a dB preset works while unrouted; active INV is orange.
 - Muted icon: red.
-- Filter type menu: slope submenus and all-pass shown as 180°/360°. This reverses the deliberate cec6ea9 flattening, so confirm it first.
+- Filter type menu: slope submenus and all-pass shown as 180°/360°. This reverses the deliberate cec6ea9 flattening. **Confirmed 2026-10-03: match the Mac.**
 - Crossover family change: keep the nearest valid slope.
 - LT editor: Revert, an "Applied" status, and an orange DC-boost warning above +15 dB.
 - Paste onto a linked input also updates its partner.
@@ -694,11 +694,11 @@ Work items:
 - Show Reset only after an update.
 
 **Settings**
-- Ctrl+, opens Settings.
-- A second gear click closes Settings.
-- Back and Forward history.
-- About links and the open-source blurb.
-- Advanced › Reset Channel Names.
+- Ctrl+, opens Settings. **Done.**
+- A second gear click closes Settings. **Done.**
+- Back and Forward history. **Declined 2026-10-03.**
+- About links and the open-source blurb. **Done.**
+- Advanced › Reset Channel Names. **Done.**
 - External mute: allow a 0 ms release.
 - Labels: "Independent" / "With Preset".
 - Return saves.

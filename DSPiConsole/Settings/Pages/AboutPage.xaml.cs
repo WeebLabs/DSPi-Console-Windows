@@ -20,6 +20,12 @@ public sealed partial class AboutPage : SettingsModule, ISettingsPage
 {
     public AboutPage() { InitializeComponent(); }
 
+    private async void OnLinkClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url })
+            await Windows.System.Launcher.LaunchUriAsync(new Uri(url));
+    }
+
     protected override void Refresh()
     {
         // App version — prefer InformationalVersion (allows "1.2.3+sha"),

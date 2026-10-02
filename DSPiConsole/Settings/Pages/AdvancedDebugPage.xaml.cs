@@ -109,8 +109,11 @@ public sealed partial class AdvancedDebugPage : SettingsModule, ISettingsPage
             + (note != null ? Environment.NewLine + note : "");
     }
 
+    private void OnResetChannelNamesClick(object sender, RoutedEventArgs e) => Vm?.ResetChannelNames();
+
     protected override void Refresh()
     {
+        ResetNamesButton.IsEnabled = Vm?.IsDeviceConnected == true;
         _suppress = true;
         try { DebugToggle.IsOn = AppSettings.Instance.ShowDebugInfo; }
         finally { _suppress = false; }

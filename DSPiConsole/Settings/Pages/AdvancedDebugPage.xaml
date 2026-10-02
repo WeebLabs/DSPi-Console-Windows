@@ -12,6 +12,11 @@
             the minimal SettingsCard rhythm. The Description slot replaces
             today's lack of inline help text.
         -->
+        <controls:SettingsCard Header="Channel names"
+                                Description="Reset all channel names to factory defaults.">
+            <Button x:Name="ResetNamesButton" Content="Reset" Click="OnResetChannelNamesClick"/>
+        </controls:SettingsCard>
+
         <controls:SettingsCard Header="Show debug info"
                                 Description="Overlays per-channel debug data on the main view. Useful for troubleshooting firmware behaviour.">
                         <ToggleSwitch x:Name="DebugToggle" OnContent="On" OffContent="Off"

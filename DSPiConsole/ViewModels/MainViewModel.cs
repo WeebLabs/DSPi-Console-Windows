@@ -511,6 +511,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CheckDirty();
     }
 
+    /// <summary>Puts every channel of this platform back to its factory name
+    /// (Settings › Advanced). No confirmation, as on the macOS Console: a name
+    /// is one click to change again.</summary>
+    public void ResetChannelNames()
+    {
+        if (!IsDeviceConnected) return;
+        var inputs = Channel.AllInputs.Take(Platform == "RP2350" ? 8 : 2);
+        foreach (var channel in inputs.Concat(ActiveOutputs))
+            SetChannelName(channel, channel.Name);
+        // An output slot set to I2S is named for it; the factory table only
+        // knows S/PDIF, so put the slot-aware names back over it.
+        UpdateDynamicChannelNames();
+    }
+
     // Output enabled state for matrix mixer / sidebar filtering
     public bool IsOutputEnabled(int outputIndex) =>
         _outputEnabled.TryGetValue(outputIndex, out var v) && v;

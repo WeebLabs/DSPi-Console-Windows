@@ -106,22 +106,27 @@ public static class FilterTypeExtensions
         _ => "Unknown"
     };
 
+    /// <summary>The dashboard's type code, as on the macOS Console: a "1"
+    /// suffix marks the first-order (6 dB/oct) variant, and a crossover reads
+    /// as its family, order and direction ("LR4 LP").</summary>
     public static string GetShortName(this FilterType type) => type switch
     {
         FilterType.Flat => "OFF",
         FilterType.Peaking => "PK",
         FilterType.LowShelf => "LS",
         FilterType.HighShelf => "HS",
-        FilterType.LowPass => "HC12",
-        FilterType.HighPass => "LC12",
-        FilterType.LowPass1 => "HC6",
-        FilterType.HighPass1 => "LC6",
+        FilterType.LowPass => "HC",
+        FilterType.HighPass => "LC",
+        FilterType.LowPass1 => "HC1",
+        FilterType.HighPass1 => "LC1",
         FilterType.Notch => "NO",
         FilterType.AllPass => "AP",
         FilterType.AllPass1 => "AP1",
         FilterType.LowShelf1 => "LS1",
         FilterType.HighShelf1 => "HS1",
         FilterType.LinkwitzTransform => "LT",
+        _ when CrossoverFilter.TryGetMeta(type, out var m) =>
+            $"{(m.Family == XoverFamily.Bessel ? "BES" : CrossoverFilter.FamilyShortName(m.Family))}{m.Order} {(m.IsHighPass ? "HP" : "LP")}",
         _ => "?"
     };
 

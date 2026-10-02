@@ -2,6 +2,14 @@
 
 ## 2026-10-03
 
+### Main window and Settings polish
+- Dashboard filter rows use the macOS Console's codes: HC and LC for the cuts, with a 1 for the first-order (6 dB/oct) variant, and show Q only for peaking bands
+- Hovering the connection dot says whether the device is connected, the last connection error, or how to retry
+- Alt-click a channel in the sidebar to rename it
+- The sidebar's Settings gear closes Settings when it is open, and lights while it is; Ctrl+, opens Settings
+- About lists links (YouTube, GitHub, Discord, Patreon, Ko-fi) with a few words about the project
+- Settings > Advanced > Debug resets every channel name to its factory default
+
 ### Getting started and release notes
 - A Getting Started wizard on first launch takes a new user from a blank Pico to verified DSPi firmware: Welcome, Board (find the board in bootloader mode, or update a connected one, and install the firmware this Console carries) and Done. It replaces the console until it is finished or skipped, and Help > Getting Started runs it again. Existing users are never shown it
 - What's New shows the release notes once after an update, and from Help whenever asked
