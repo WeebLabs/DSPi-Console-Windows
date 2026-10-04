@@ -38,28 +38,25 @@ public class AutoEQManager
     {
         try
         {
-            // Try loading from file next to executable
-            var basePath = AppContext.BaseDirectory;
-            var filePath = Path.Combine(basePath, "autoeq_database.json");
+            // A database the user imported (Update Database > Import File) wins
+            // over the built-in one next to the executable; "Reset to built-in"
+            // deletes it.
+            var userPath = Path.Combine(_appDataPath, "autoeq_database.json");
+            var filePath = Path.Combine(AppContext.BaseDirectory, "autoeq_database.json");
 
-            if (File.Exists(filePath))
+            if (File.Exists(userPath))
+            {
+                var json = await File.ReadAllTextAsync(userPath);
+                ParseDatabase(json);
+            }
+            else if (File.Exists(filePath))
             {
                 var json = await File.ReadAllTextAsync(filePath);
                 ParseDatabase(json);
             }
             else
             {
-                // Also check the user's app data folder
-                var userPath = Path.Combine(_appDataPath, "autoeq_database.json");
-                if (File.Exists(userPath))
-                {
-                    var json = await File.ReadAllTextAsync(userPath);
-                    ParseDatabase(json);
-                }
-                else
-                {
-                    ErrorMessage = $"AutoEQ database not found at {filePath}";
-                }
+                ErrorMessage = $"AutoEQ database not found at {filePath}";
             }
         }
         catch (Exception ex)
