@@ -12,12 +12,17 @@ namespace DSPiConsole.Services;
 public static class FilterFileService
 {
     /// <summary>
-    /// Generates export string in DSPi Console format. When <paramref name="xoverData"/>
-    /// is supplied, each output channel's crossover bands (wire bands 20-23) are
-    /// written as <c>Crossover N:</c> lines after its PEQ filters. These lines use a
-    /// distinct prefix so older parsers (and the REW reader) skip them harmlessly.
+    /// Generates export string in DSPi Console format, one section per channel in
+    /// <paramref name="channels"/> (the device's own, so a board's PDM is named
+    /// PDM). Every channel is written, a flat one as OFF lines, and every
+    /// crossover in <paramref name="xoverData"/>, so importing the file puts
+    /// back channels that were flat and crossovers that were off. Crossover bands
+    /// (wire bands 20-23) are written as <c>Crossover N:</c> lines after the PEQ
+    /// filters; the distinct prefix lets older parsers (and the REW reader)
+    /// skip them harmlessly.
     /// </summary>
     public static string GenerateExportString(
+        IEnumerable<Channel> channels,
         IReadOnlyDictionary<int, IReadOnlyList<FilterParams>> channelData,
         IReadOnlyDictionary<int, IReadOnlyList<FilterParams>>? xoverData = null)
     {
@@ -26,29 +31,21 @@ public static class FilterFileService
         sb.AppendLine($"# Exported: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine();
 
-        foreach (var channel in Channel.All)
+        foreach (var channel in channels)
         {
-            channelData.TryGetValue((int)channel.Id, out var filters);
-            bool hasPeq = filters != null && filters.Any(f => f.Type != FilterType.Flat);
+            if (!channelData.TryGetValue((int)channel.Id, out var filters)) continue;
 
             IReadOnlyList<FilterParams>? xover = null;
             xoverData?.TryGetValue((int)channel.Id, out xover);
-            bool hasXover = xover != null && xover.Any(f => f.Type.IsCrossover());
-
-            if (!hasPeq && !hasXover)
-                continue;
 
             sb.AppendLine($"[{channel.Name}]");
 
-            if (filters != null)
-            {
-                for (int i = 0; i < filters.Count; i++)
-                    sb.AppendLine(FormatFilter(i + 1, filters[i]));
-            }
+            for (int i = 0; i < filters.Count; i++)
+                sb.AppendLine(FormatFilter(i + 1, filters[i]));
 
-            if (hasXover)
+            if (xover != null)
             {
-                for (int i = 0; i < xover!.Count; i++)
+                for (int i = 0; i < xover.Count; i++)
                     sb.AppendLine(FormatXoverFilter(i + 1, xover[i]));
             }
 
@@ -265,9 +262,18 @@ public static class FilterFileService
             return index < list.Count ? (int)list[index].Id : null;
         }
 
-        foreach (var ch in Channel.All)
+        // The device's outputs first: on RP2040 "PDM" is channel 6, not 10.
+        foreach (var ch in outputs)
             if (ch.Name.Equals(header, StringComparison.OrdinalIgnoreCase))
                 return (int)ch.Id;
+        foreach (var ch in Channel.All)
+        {
+            if (!ch.Name.Equals(header, StringComparison.OrdinalIgnoreCase)) continue;
+            // An output this board lacks whose id another of its outputs uses
+            // (RP2350's SPDIF 3 L is RP2040's PDM, both 6): not that output.
+            if (ch.IsOutput && outputs.Any(o => o.Id == ch.Id)) return null;
+            return (int)ch.Id;
+        }
         return null;
     }
 

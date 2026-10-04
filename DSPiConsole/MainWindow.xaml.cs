@@ -6108,10 +6108,12 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            // Build channel data dictionary
+            // The device's channels: its wire inputs and its board's outputs.
+            int inputs = Math.Clamp(ViewModel.NumInputChannels, 1, Channel.AllInputs.Count);
+            var channels = Channel.AllInputs.Take(inputs).Concat(ViewModel.ActiveOutputs).ToList();
             var channelData = new Dictionary<int, IReadOnlyList<FilterParams>>();
             var xoverData = new Dictionary<int, IReadOnlyList<FilterParams>>();
-            foreach (var channel in Channel.All)
+            foreach (var channel in channels)
             {
                 var filters = ViewModel.GetFilters(channel);
                 channelData[(int)channel.Id] = filters.ToList();
@@ -6126,7 +6128,7 @@ public sealed partial class MainWindow : Window
             }
 
             var output = FilterFileService.GenerateExportString(
-                channelData, xoverData.Count > 0 ? xoverData : null);
+                channels, channelData, xoverData.Count > 0 ? xoverData : null);
             await Windows.Storage.FileIO.WriteTextAsync(file, output);
             await ShowSuccessDialog("Filters exported successfully");
         }
