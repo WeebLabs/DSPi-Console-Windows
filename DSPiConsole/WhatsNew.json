@@ -12,7 +12,12 @@
       "A setup wizard on first launch walks you through installing DSPi on a Pico. You can skip it, and run it again from Help in the menu.",
       "Control Surfaces can now switch auxiliary outputs: a relay, lamp or amplifier trigger on a spare GPIO pin.",
       "Dashboard cards sit in a grid that uses the width of the window. Choose Auto or one to three per row from the gear on any card.",
-      "The tool windows have been redesigned, with their controls and graphs side by side."
+      "The tool windows have been redesigned. The effect windows place their controls and graphs side by side and are gathered under Effects in the menu, and the Signal Generator, Statistics and Interrupt Monitor have been rebuilt.",
+      "Channel pages can copy and paste their settings (Ctrl+C, Ctrl+V), outputs have Clear All, and the filter type menu groups the shelves and cuts by slope. Preamp, gain and delay can be typed, and a right-click resets them to zero.",
+      "The Matrix Mixer shows gain and invert only on connected crosspoints, adds a trim to each input row along with Direct 1:1 and Clear, and gives each output a right-click menu to identify, rename, copy or paste it.",
+      "Filter files exported from DSPi Console for macOS now import correctly, and the preamp in an AutoEQ or REW file is applied with its filters. Exports keep full precision and include every channel, so importing one puts the channels back exactly as they were.",
+      "Many reliability fixes: switching between two DSPis no longer resets the new device's volume, moving quickly between filter fields or bands no longer loses an edit, unsaved changes are tracked more accurately, and the Console reconnects by itself when a connection goes stale after a quick replug or a wake from sleep.",
+      "Help in the menu has Getting Started, What's New and links to DSPi on GitHub, and Alt-click renames a channel in the sidebar."
     ]
   }
 ]
