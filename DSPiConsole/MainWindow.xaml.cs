@@ -1601,6 +1601,14 @@ public sealed partial class MainWindow : Window
                     e.Handled = true;
                     FocusSink.Focus(FocusState.Programmatic);
                 }
+                else if (e.Key == Windows.System.VirtualKey.Escape)
+                {
+                    // Cancel: put the current value back before the blur
+                    // that would otherwise apply what was typed.
+                    e.Handled = true;
+                    gainTextBox.Text = ViewModel.GetChannelGain(channel).ToString("0.00", CultureInfo.InvariantCulture);
+                    FocusSink.Focus(FocusState.Programmatic);
+                }
             };
             gainValuePanel.Children.Add(gainTextBox);
             gainValuePanel.Children.Add(new TextBlock { Text = "dB", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Foreground = unitBrush });
@@ -1724,6 +1732,12 @@ public sealed partial class MainWindow : Window
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
                     e.Handled = true;
+                    FocusSink.Focus(FocusState.Programmatic);
+                }
+                else if (e.Key == Windows.System.VirtualKey.Escape)
+                {
+                    e.Handled = true;
+                    delayTextBox.Text = ViewModel.GetChannelDelay(channel).ToString("0.00##", CultureInfo.InvariantCulture);
                     FocusSink.Focus(FocusState.Programmatic);
                 }
             };
@@ -1954,6 +1968,13 @@ public sealed partial class MainWindow : Window
                     if (e.Key == Windows.System.VirtualKey.Enter)
                     {
                         e.Handled = true;
+                        FocusSink.Focus(FocusState.Programmatic);
+                    }
+                    else if (e.Key == Windows.System.VirtualKey.Escape && _currentOutputIndex >= 0)
+                    {
+                        e.Handled = true;
+                        gainText.Text = ViewModel.GetMatrixGain(capturedInput, _currentOutputIndex)
+                            .ToString("0.00", CultureInfo.InvariantCulture) + " dB";
                         FocusSink.Focus(FocusState.Programmatic);
                     }
                 };
@@ -2551,6 +2572,13 @@ public sealed partial class MainWindow : Window
                 Commit();
                 FocusSink.Focus(FocusState.Programmatic);
             }
+            else if (e.Key == Windows.System.VirtualKey.Escape)
+            {
+                // Cancel: the current value back, so the blur finds nothing to commit.
+                e.Handled = true;
+                textBox.Text = FormatFilterValue(p.Frequency, 2);
+                FocusSink.Focus(FocusState.Programmatic);
+            }
         };
 
         panel.Children.Add(textBox);
@@ -3049,6 +3077,20 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 OnFilterValueChanged(s, null!);
                 // Move focus to hidden sink to clear selection and cursor
+                FocusSink.Focus(FocusState.Programmatic);
+            }
+            else if (e.Key == Windows.System.VirtualKey.Escape)
+            {
+                // Cancel: the band's current value back, so the blur finds
+                // nothing to commit (OnFilterValueChanged skips unchanged text).
+                e.Handled = true;
+                var filters = ViewModel.GetFilters(tag.channel);
+                if (tag.band < filters.Count)
+                {
+                    var cur = filters[tag.band];
+                    float v = tag.param == "freq" ? cur.Frequency : tag.param == "q" ? cur.Q : cur.Gain;
+                    textBox.Text = FormatFilterValue(v, tag.param == "q" ? 3 : 2);
+                }
                 FocusSink.Focus(FocusState.Programmatic);
             }
         };
