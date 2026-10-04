@@ -5176,12 +5176,27 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (_closeConfirmed) return;
+        // A second close request (X or Alt+F4 again) while the prompt is up:
+        // WinUI throws if a second ContentDialog opens on the window.
+        if (_closePromptOpen)
+        {
+            args.Cancel = true;
+            return;
+        }
 
         if (!ViewModel.PresetsDirty || !ViewModel.IsDeviceConnected)
             return;
 
         args.Cancel = true;
+        _closePromptOpen = true;
+        try { await ConfirmCloseWithUnsavedChangesAsync(); }
+        finally { _closePromptOpen = false; }
+    }
 
+    private bool _closePromptOpen;
+
+    private async Task ConfirmCloseWithUnsavedChangesAsync()
+    {
         var summary = ViewModel.GetChangeSummary();
         var message = summary != null
             ? $"You have unsaved changes:\n\n{summary}"
