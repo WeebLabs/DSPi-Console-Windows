@@ -129,6 +129,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // so no volatility is needed.
     private bool _suppressUserVolumeSend;
 
+    // Non-zero while values read from the device (or reset locally on
+    // disconnect) are being applied, so the preamp, master volume and bypass
+    // setters neither write them back nor mirror across a linked pair. A
+    // write from a reset can otherwise land on the next device opened, and a
+    // linked-pair mirror would copy one side over the other on the device.
+    // UI-thread only.
+    private int _applyingDeviceState;
+
+    private void ApplyFromDevice(Action apply)
+    {
+        _applyingDeviceState++;
+        try { apply(); }
+        finally { _applyingDeviceState--; }
+    }
+
     // Channel copy/paste clipboard
     private ChannelClipboard? _channelClipboard;
     public bool HasChannelClipboard => _channelClipboard != null;
@@ -1014,10 +1029,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 _channelMutes[id] = false;
             }
         }
-        InputPreampLDb = 0;
-        InputPreampRDb = 0;
-        MasterVolumeDb = 0;
-        Bypass = false;
+        // Local reset only: the device is gone, and a queued write would land on
+        // whichever device opens next.
+        ApplyFromDevice(() =>
+        {
+            InputPreampLDb = 0;
+            InputPreampRDb = 0;
+            MasterVolumeDb = 0;
+            Bypass = false;
+        });
         FiltersChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1841,8 +1861,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (bp.HasPerChannelPreamp)
             {
-                InputPreampLDb = bp.PreampLDb;
-                InputPreampRDb = bp.PreampRDb;
+                ApplyFromDevice(() =>
+                {
+                    InputPreampLDb = bp.PreampLDb;
+                    InputPreampRDb = bp.PreampRDb;
+                });
                 for (int i = 2; i < Math.Min(8, bp.Preamp.Length); i++)
                 {
                     // Raised per input, as a notification is, so open trims follow a re-seed.
@@ -1854,11 +1877,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             else
             {
                 // Pre-V6 firmware: legacy uniform preamp in PreampGainDb
-                InputPreampLDb = bp.PreampGainDb;
-                InputPreampRDb = bp.PreampGainDb;
+                ApplyFromDevice(() =>
+                {
+                    InputPreampLDb = bp.PreampGainDb;
+                    InputPreampRDb = bp.PreampGainDb;
+                });
             }
             if (bp.HasMasterVolume)
-                MasterVolumeDb = bp.MasterVolumeDb;
+                ApplyFromDevice(() => MasterVolumeDb = bp.MasterVolumeDb);
             CrossoverSupported = bp.HasCrossover;
             InputI2sSupported = bp.HasI2sInputConfig;
             MultiSpdifSupported = bp.HasSpdifExtInputs;
@@ -1899,7 +1925,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 LevellerDetectorMask = bp.LevellerDetectorMask;
                 LevellerApplyMask = bp.LevellerApplyMask;
             }
-            Bypass = bp.Bypass;
+            ApplyFromDevice(() => Bypass = bp.Bypass);
             LoudnessEnabled = bp.LoudnessEnabled;
             LoudnessRefSPL = bp.LoudnessRefSpl;
             LoudnessIntensity = bp.LoudnessIntensityPct;
@@ -2961,19 +2987,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnInputPreampLDbChanged(float value)
     {
-        var rounded = MathF.Round(value, 1);
-        DeviceWrite(() => _device.SetInputPreamp(0, rounded));
-        if (_masterPeqLinked && Math.Abs(InputPreampRDb - rounded) > 0.05f)
-            InputPreampRDb = rounded;
+        if (_applyingDeviceState == 0)
+        {
+            var rounded = MathF.Round(value, 1);
+            DeviceWrite(() => _device.SetInputPreamp(0, rounded));
+            if (_masterPeqLinked && Math.Abs(InputPreampRDb - rounded) > 0.05f)
+                InputPreampRDb = rounded;
+        }
         CheckDirty();
     }
 
     partial void OnInputPreampRDbChanged(float value)
     {
-        var rounded = MathF.Round(value, 1);
-        DeviceWrite(() => _device.SetInputPreamp(1, rounded));
-        if (_masterPeqLinked && Math.Abs(InputPreampLDb - rounded) > 0.05f)
-            InputPreampLDb = rounded;
+        if (_applyingDeviceState == 0)
+        {
+            var rounded = MathF.Round(value, 1);
+            DeviceWrite(() => _device.SetInputPreamp(1, rounded));
+            if (_masterPeqLinked && Math.Abs(InputPreampLDb - rounded) > 0.05f)
+                InputPreampLDb = rounded;
+        }
         CheckDirty();
     }
 
@@ -3023,8 +3055,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnMasterVolumeDbChanged(float value)
     {
-        var send = value <= -127.5f ? -128f : MathF.Round(value, 1);
-        Task.Run(() => _device.SetMasterVolume(send));
+        if (_applyingDeviceState == 0)
+        {
+            var send = value <= -127.5f ? -128f : MathF.Round(value, 1);
+            Task.Run(() => _device.SetMasterVolume(send));
+        }
         CheckDirty();
     }
 
@@ -3057,20 +3092,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (l.HasValue && r.HasValue)
         {
             if (Math.Abs(InputPreampLDb - l.Value) > 0.1f)
-                _dispatcher.TryEnqueue(() => InputPreampLDb = l.Value);
+                _dispatcher.TryEnqueue(() => ApplyFromDevice(() => InputPreampLDb = l.Value));
             if (Math.Abs(InputPreampRDb - r.Value) > 0.1f)
-                _dispatcher.TryEnqueue(() => InputPreampRDb = r.Value);
+                _dispatcher.TryEnqueue(() => ApplyFromDevice(() => InputPreampRDb = r.Value));
             return true;
         }
         // Fallback to legacy uniform preamp for pre-V6 firmware
         var legacy = _device.GetPreamp();
         if (legacy.HasValue)
         {
-            _dispatcher.TryEnqueue(() =>
+            _dispatcher.TryEnqueue(() => ApplyFromDevice(() =>
             {
                 InputPreampLDb = legacy.Value;
                 InputPreampRDb = legacy.Value;
-            });
+            }));
             return true;
         }
         _dispatcher.TryEnqueue(() => IsDeviceConnected = false);
@@ -3081,7 +3116,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var mv = _device.GetMasterVolume();
         if (mv.HasValue && Math.Abs(MasterVolumeDb - mv.Value) > 0.1f)
-            _dispatcher.TryEnqueue(() => MasterVolumeDb = mv.Value);
+            _dispatcher.TryEnqueue(() => ApplyFromDevice(() => MasterVolumeDb = mv.Value));
     }
 
     /// <summary>
@@ -3098,7 +3133,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnBypassChanged(bool value)
     {
-        Task.Run(() => _device.SetBypass(value));
+        if (_applyingDeviceState == 0)
+            Task.Run(() => _device.SetBypass(value));
         BypassChanged?.Invoke(this, EventArgs.Empty);
         CheckDirty();
     }
@@ -3108,7 +3144,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var bypass = _device.GetBypass();
         if (bypass.HasValue)
         {
-            _dispatcher.TryEnqueue(() => Bypass = bypass.Value);
+            _dispatcher.TryEnqueue(() => ApplyFromDevice(() => Bypass = bypass.Value));
         }
     }
 
