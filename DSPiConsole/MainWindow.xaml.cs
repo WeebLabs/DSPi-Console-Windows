@@ -5538,6 +5538,12 @@ public sealed partial class MainWindow : Window
         // Probe caps + descriptors before opening so the window builds fully populated.
         await ViewModel.FetchSiggenAsync();
 
+        // A second press (or key repeat) during the fetch got here too.
+        if (_testSignalsWindow != null)
+        {
+            _testSignalsWindow.Activate();
+            return;
+        }
         _testSignalsWindow = new TestSignalsWindow(ViewModel);
         _testSignalsWindow.Closed += (s, e) => _testSignalsWindow = null;
         _testSignalsWindow.Activate();
