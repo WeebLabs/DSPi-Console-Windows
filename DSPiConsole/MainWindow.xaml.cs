@@ -5184,6 +5184,20 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Pending Settings changes go through Settings' own prompt (Save to
+        // flash / Discard / Cancel) first: quitting would otherwise drop them
+        // without a word. Quit goes on only if Settings closed.
+        if (ViewModel.IsDeviceConnected && _settingsWindow is { } settings && settings.Tracker.Count > 0)
+        {
+            args.Cancel = true;
+            bool settingsClosed;
+            _closePromptOpen = true;
+            try { settingsClosed = await settings.TryCloseAsync(); }
+            finally { _closePromptOpen = false; }
+            if (settingsClosed) Close();
+            return;
+        }
+
         if (!ViewModel.PresetsDirty || !ViewModel.IsDeviceConnected)
             return;
 

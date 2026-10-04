@@ -176,6 +176,27 @@ public sealed partial class SettingsWindow : Window
         catch (Exception ex) { WriteCrashLog("SettingsWindow.RequestClose", ex); }
     }
 
+    /// <summary>
+    /// As <see cref="RequestClose"/>, for a caller that goes on only once
+    /// Settings has closed (the main window quitting): true when it closed
+    /// (nothing pending, saved, or discarded), false when the user cancelled
+    /// or a save failed and the window stays open.
+    /// </summary>
+    internal async Task<bool> TryCloseAsync()
+    {
+        if (_confirming) return false;
+        if (Tracker.Count == 0)
+        {
+            _allowClose = true;
+            Close();
+            return true;
+        }
+        Activate();
+        try { await ConfirmCloseAsync(); }
+        catch (Exception ex) { WriteCrashLog("SettingsWindow.TryCloseAsync", ex); }
+        return _allowClose;
+    }
+
     private async void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_allowClose || Tracker.Count == 0) return;
