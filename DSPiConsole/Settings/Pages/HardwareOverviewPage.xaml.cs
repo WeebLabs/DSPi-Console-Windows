@@ -119,6 +119,10 @@ public sealed partial class HardwareOverviewPage : SettingsModule, ISettingsPage
         {
             Vm.PropertyChanged -= OnVmPropertyChanged;
             Vm.PropertyChanged += OnVmPropertyChanged;
+            // A preset load re-reads the device, and output pins and types are
+            // per preset in with-preset mode; the bulk read raises no pin event.
+            Vm.BulkRefreshed -= OnBulkRefreshed;
+            Vm.BulkRefreshed += OnBulkRefreshed;
         }
         // Another page may have moved a pin while this one was detached.
         Refresh();
@@ -127,10 +131,16 @@ public sealed partial class HardwareOverviewPage : SettingsModule, ISettingsPage
     private void OnPageUnloaded(object sender, RoutedEventArgs e)
     {
         HardwarePins.PinAssignmentsChanged -= OnPinsChanged;
-        if (Vm != null) Vm.PropertyChanged -= OnVmPropertyChanged;
+        if (Vm != null)
+        {
+            Vm.PropertyChanged -= OnVmPropertyChanged;
+            Vm.BulkRefreshed -= OnBulkRefreshed;
+        }
     }
 
     private void OnPinsChanged() => DispatcherQueue.TryEnqueue(Refresh);
+
+    private void OnBulkRefreshed(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(Refresh);
 
     /// <summary>The properties that change which pins are claimed rather than
     /// what they are called. Everything else a pin edit touches arrives through
