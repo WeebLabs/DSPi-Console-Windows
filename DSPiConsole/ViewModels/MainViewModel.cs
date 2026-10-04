@@ -2450,15 +2450,35 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Longest output delay the firmware's delay line holds, in ms at
-    /// 48 kHz: MAX_DELAY_SAMPLES is 2048 on RP2350 and 1024 on RP2040
-    /// (config.h, since firmware 9ec0ca1). Longer requests are silently capped
-    /// on the device, so the UI caps them first.</summary>
-    public float MaxOutputDelayMs => Platform == "RP2350" ? 42f : 21f;
+    /// <summary>Longest output delay the firmware's delay line holds at the
+    /// current sample rate: MAX_DELAY_SAMPLES is 2048 on RP2350 and 1024 on
+    /// RP2040 (config.h, since firmware 9ec0ca1), and the firmware converts ms
+    /// to samples at the live rate, so the limit is 42.6 / 21.3 ms at 48 kHz
+    /// and half that at 96 kHz. Longer requests are silently capped on the
+    /// device, so the UI caps them first. (A stored delay is kept in ms, so
+    /// one set at a lower rate comes back in full when the rate does.)</summary>
+    public float MaxOutputDelayMs
+    {
+        get
+        {
+            int maxSamples = Platform == "RP2350" ? 2048 : 1024;
+            uint rate = _sampleRateHz >= 8000 ? _sampleRateHz : 48000;
+            // Rounded down to the field's 0.01 ms so the firmware's truncating
+            // ms→samples conversion never lands past the end of the line.
+            return MathF.Floor(maxSamples * 100000f / rate) / 100f;
+        }
+    }
+
+    /// <summary>The cap the model setters apply: never below the 48 kHz limit,
+    /// so a delay written by a preset import while the device runs at 96 kHz is
+    /// stored in full (the firmware keeps ms and applies it in full again at
+    /// 48 kHz), and never below <see cref="MaxOutputDelayMs"/>, which the
+    /// editors cap new values with (higher at 44.1 kHz).</summary>
+    internal float MaxStoredOutputDelayMs => Math.Max(Platform == "RP2350" ? 42f : 21f, MaxOutputDelayMs);
 
     public void SetDelay(int channel, float ms)
     {
-        ms = MathF.Round(Math.Clamp(ms, 0f, MaxOutputDelayMs), 4);
+        ms = MathF.Round(Math.Clamp(ms, 0f, MaxStoredOutputDelayMs), 4);
         _channelDelays[channel] = ms;
         int outputIndex = GetOutputIndex(channel);
         if (outputIndex >= 0)

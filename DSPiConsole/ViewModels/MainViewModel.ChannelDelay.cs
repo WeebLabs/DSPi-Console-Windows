@@ -38,7 +38,7 @@ public partial class MainViewModel
             SetDelay(channelId, ms);
             return;
         }
-        ms = MathF.Round(Math.Clamp(ms, 0f, MaxOutputDelayMs), 4);
+        ms = MathF.Round(Math.Clamp(ms, 0f, MaxStoredOutputDelayMs), 4);
         if (Math.Abs(GetPreMatrixDelay(channelId) - ms) < 0.00005f) return;
         _inputChannelDelays[channelId] = ms;
         Task.Run(() => _device.SetDelay(channelId, ms));

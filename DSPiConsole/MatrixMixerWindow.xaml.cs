@@ -448,7 +448,9 @@ public sealed partial class MatrixMixerWindow : Window
                     if (e.Key == Windows.System.VirtualKey.Enter)
                     {
                         e.Handled = true;
-                        if (ParseDelayText(text.Text, out float val))
+                        // Unchanged text commits nothing: re-applying the cap would
+                        // cut a delay stored at a lower sample rate.
+                        if (text.Text != FormatDelay(_viewModel.GetOutputDelayMs(o)) && ParseDelayText(text.Text, out float val))
                             _viewModel.SetOutputDelayMs(o, Math.Clamp(val, 0f, _viewModel.MaxOutputDelayMs));
                         FocusSink.Focus(FocusState.Programmatic);
                     }
@@ -460,6 +462,7 @@ public sealed partial class MatrixMixerWindow : Window
                 };
                 text.LostFocus += (s, e) =>
                 {
+                    if (text.Text == FormatDelay(_viewModel.GetOutputDelayMs(o))) return;
                     if (ParseDelayText(text.Text, out float val))
                         _viewModel.SetOutputDelayMs(o, Math.Clamp(val, 0f, _viewModel.MaxOutputDelayMs));
                     else

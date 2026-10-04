@@ -4014,10 +4014,15 @@ public sealed partial class MainWindow : Window
         if (_isUpdatingDelay) return;
         if (sender is not TextBox textBox || textBox.Tag is not Channel channel) return;
 
+        // Unchanged text (focus left without an edit, Escape) commits nothing:
+        // re-applying the cap would cut a delay stored at a lower sample rate.
+        if (textBox.Text == ViewModel.GetChannelDelay(channel).ToString("0.00##", CultureInfo.InvariantCulture)) return;
+
         _isUpdatingDelay = true;
         if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
         {
-            ViewModel.SetDelay((int)channel.Id, value);
+            // Capped at what the delay line holds at the current rate.
+            ViewModel.SetDelay((int)channel.Id, Math.Clamp(value, 0f, ViewModel.MaxOutputDelayMs));
             _currentDelayDrag?.Show(ViewModel.GetChannelDelay(channel));
         }
         textBox.Text = ViewModel.GetChannelDelay(channel).ToString("0.00##", CultureInfo.InvariantCulture);

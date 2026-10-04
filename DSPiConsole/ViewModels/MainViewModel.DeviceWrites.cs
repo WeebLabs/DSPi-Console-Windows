@@ -90,7 +90,7 @@ public partial class MainViewModel
     {
         int output = GetOutputIndex(channelId);
         if (output < 0) return;
-        ms = MathF.Round(Math.Clamp(ms, 0f, MaxOutputDelayMs), 4);
+        ms = MathF.Round(Math.Clamp(ms, 0f, MaxStoredOutputDelayMs), 4);
         DeviceWrite(() => _device.SetOutputDelay(output, ms));
     }
 
