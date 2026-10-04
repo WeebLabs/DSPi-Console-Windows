@@ -387,7 +387,7 @@ public static class PresetFileService
         var byId = new Dictionary<int, PresetChannelBlock>();
         foreach (var block in doc.Channels)
         {
-            int? id = ResolveChannel(vm, block);
+            int? id = ResolveChannel(vm, doc, block);
             if (id is { } found && deviceIds.Contains(found)) byId[found] = block;
             else report.MissingChannels.Add(block.Name);
         }
@@ -434,13 +434,67 @@ public static class PresetFileService
     /// output index when the file has one (the macOS Console's numbering, and
     /// what newer Windows files write too), else by its Windows channel id.
     /// </summary>
-    private static int? ResolveChannel(MainViewModel vm, PresetChannelBlock block)
+    private static int? ResolveChannel(MainViewModel vm, PresetDocument doc, PresetChannelBlock block)
     {
         if (block.InputIndex is { } input)
             return input >= 0 && input < Channel.AllInputs.Count ? (int)Channel.AllInputs[input].Id : null;
         if (block.OutputIndex is { } output)
-            return output >= 0 && output < vm.ActiveOutputs.Count ? (int)vm.ActiveOutputs[output].Id : null;
+            return MapOutputIndex(vm, doc, output) is { } o ? (int)vm.ActiveOutputs[o].Id : null;
+        // Older Windows files: a Windows channel id. Output ids are per board
+        // (6 is PDM on RP2040 but S/PDIF 3 L on RP2350), so an output from the
+        // other board goes through its output index.
+        var fileOutputs = MainViewModel.OutputsForPlatform(doc.Meta.Platform);
+        if (block.IsOutput && fileOutputs.Count > 0 && doc.Meta.Platform != vm.Platform)
+        {
+            int fileIndex = fileOutputs.ToList().FindIndex(c => (int)c.Id == block.ChannelId);
+            return fileIndex >= 0 && MapOutputIndex(vm, doc, fileIndex) is { } o2
+                ? (int)vm.ActiveOutputs[o2].Id : null;
+        }
         return block.ChannelId;
+    }
+
+    /// <summary>
+    /// A file's output index as this device's, or null if the device has no
+    /// such output. The S/PDIF outputs share their indices on both boards, but
+    /// PDM comes after them: output 4 on RP2040 (two S/PDIF pairs) and output 8
+    /// on RP2350 (four). Matching by index alone would put an RP2040 file's
+    /// PDM settings on RP2350's S/PDIF 3 L, and the reverse would put S/PDIF 3 L
+    /// on RP2040's PDM. A file with no platform, or this device's, maps as is.
+    /// </summary>
+    private static int? MapOutputIndex(MainViewModel vm, PresetDocument doc, int fileOutput)
+    {
+        var deviceOutputs = vm.ActiveOutputs;
+        var fileOutputs = MainViewModel.OutputsForPlatform(doc.Meta.Platform);
+        if (fileOutputs.Count == 0 || doc.Meta.Platform == vm.Platform)
+            return fileOutput >= 0 && fileOutput < deviceOutputs.Count ? fileOutput : null;
+        if (fileOutput < 0 || fileOutput >= fileOutputs.Count || deviceOutputs.Count == 0) return null;
+        // PDM is the last output on both boards.
+        if (fileOutput == fileOutputs.Count - 1) return deviceOutputs.Count - 1;
+        return fileOutput < deviceOutputs.Count - 1 ? fileOutput : null;
+    }
+
+    /// <summary>A per-output bit mask (bit k = output k) from the file, remapped
+    /// to this device's outputs (see <see cref="MapOutputIndex"/>).</summary>
+    private static int MapOutputMask(MainViewModel vm, PresetDocument doc, int mask)
+    {
+        if (MainViewModel.OutputsForPlatform(doc.Meta.Platform).Count == 0 || doc.Meta.Platform == vm.Platform)
+            return mask;
+        int mapped = 0;
+        for (int k = 0; k < 16; k++)
+            if ((mask & (1 << k)) != 0 && MapOutputIndex(vm, doc, k) is { } o)
+                mapped |= 1 << o;
+        return mapped;
+    }
+
+    /// <summary>The crossfeed output-pair mask (bit p = S/PDIF pair p) from the
+    /// file. The pairs share their indices on both boards, so only pairs this
+    /// device lacks are dropped.</summary>
+    private static int MapOutputPairMask(MainViewModel vm, PresetDocument doc, int mask)
+    {
+        if (MainViewModel.OutputsForPlatform(doc.Meta.Platform).Count == 0 || doc.Meta.Platform == vm.Platform)
+            return mask;
+        int pairs = (vm.ActiveOutputs.Count - 1) / 2;
+        return mask & ((1 << pairs) - 1);
     }
 
     /// <summary>True when the file carries input delays: it keeps an output's
@@ -612,14 +666,15 @@ public static class PresetFileService
         int outputCount = Math.Min(vm.ActiveOutputs.Count, MainViewModel.MatrixMaxOutputs);
         foreach (var cp in doc.Matrix)
         {
+            int? output = MapOutputIndex(vm, doc, cp.Output);
             if (cp.Input < 0 || cp.Input >= MainViewModel.MatrixMaxInputs ||
-                cp.Output < 0 || cp.Output >= outputCount)
+                output is not { } o || o >= outputCount)
             {
                 tick();
                 continue;
             }
 
-            vm.SetMatrixRoute(cp.Input, cp.Output, cp.Enabled, cp.GainDb, cp.Invert);
+            vm.SetMatrixRoute(cp.Input, o, cp.Enabled, cp.GainDb, cp.Invert);
             report.CrosspointsApplied++;
             tick();
         }
@@ -656,7 +711,7 @@ public static class PresetFileService
         vm.LoudnessRefSPL = doc.Loudness.RefSpl;
         vm.LoudnessIntensity = doc.Loudness.IntensityPct;
         if (vm.LoudnessMaskSupported)
-            vm.LoudnessOutputMask = doc.Loudness.OutputMask;
+            vm.LoudnessOutputMask = MapOutputMask(vm, doc, doc.Loudness.OutputMask);
         vm.LoudnessEnabled = doc.Loudness.Enabled;
 
         // Crossfeed
@@ -665,7 +720,7 @@ public static class PresetFileService
         vm.CrossfeedFeed = doc.Crossfeed.FeedDb;
         vm.CrossfeedItd = doc.Crossfeed.Itd;
         if (vm.CrossfeedMaskSupported)
-            vm.CrossfeedOutputPairMask = doc.Crossfeed.OutputPairMask;
+            vm.CrossfeedOutputPairMask = MapOutputPairMask(vm, doc, doc.Crossfeed.OutputPairMask);
         vm.CrossfeedEnabled = doc.Crossfeed.Enabled;
 
         // Volume leveller
@@ -691,7 +746,7 @@ public static class PresetFileService
                 vm.PsybassDriveDb = pb.DriveDb;
                 vm.PsybassCharacterPct = pb.CharacterPct;
                 vm.PsybassOriginalDb = pb.OriginalDb;
-                vm.PsybassOutputMask = pb.OutputMask;
+                vm.PsybassOutputMask = MapOutputMask(vm, doc, pb.OutputMask);
                 vm.PsybassEnabled = pb.Enabled;
             }
             else
@@ -708,7 +763,7 @@ public static class PresetFileService
                 vm.SubharmLowDb = Math.Clamp(sb.LowDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
                 vm.SubharmHighDb = Math.Clamp(sb.HighDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
                 vm.SubharmBoostDb = Math.Clamp(sb.BoostDb, SubharmLimits.BoostMinDb, SubharmLimits.BoostMaxDb);
-                vm.SubharmOutputMask = sb.OutputMask & 0xFFFF;
+                vm.SubharmOutputMask = MapOutputMask(vm, doc, sb.OutputMask & 0xFFFF);
                 if (vm.SubharmExtendedSupported)
                 {
                     vm.SubharmTopDb = Math.Clamp(sb.TopDb, SubharmLimits.LevelMinDb, SubharmLimits.LevelMaxDb);
@@ -733,7 +788,7 @@ public static class PresetFileService
         {
             if (vm.TubeSupported)
             {
-                vm.TubeOutputMask = tb.OutputMask & 0xFFFF;
+                vm.TubeOutputMask = MapOutputMask(vm, doc, tb.OutputMask & 0xFFFF);
                 vm.TubeDriveDb = Math.Clamp(tb.DriveDb, TubeLimits.DriveMinDb, TubeLimits.DriveMaxDb);
                 vm.TubeBiasPct = Math.Clamp(tb.BiasPct, TubeLimits.BiasMinPct, TubeLimits.BiasMaxPct);
                 vm.TubeAsymDb = Math.Clamp(tb.AsymDb, TubeLimits.AsymMinDb, TubeLimits.AsymMaxDb);

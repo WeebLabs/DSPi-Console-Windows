@@ -385,7 +385,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<Channel> ActiveOutputs => OutputsForPlatform(Platform);
 
-    private static IReadOnlyList<Channel> OutputsForPlatform(string? platform) => platform switch
+    public static IReadOnlyList<Channel> OutputsForPlatform(string? platform) => platform switch
     {
         "RP2040" => Channel.Rp2040Outputs,
         "RP2350" => Channel.Outputs,
