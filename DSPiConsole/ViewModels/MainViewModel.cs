@@ -2164,6 +2164,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<bool> SetFilter(int channel, int band, FilterParams p)
     {
         CancelLiveFilterSends();   // this awaited write is authoritative — no stale live write after it
+        CancelDeferredFilterSend(channel, band);
+        if (IsInputPairLinked(channel)) CancelDeferredFilterSend(GetLinkedInputChannel(channel), band);
         if (_channelData.TryGetValue(channel, out var filters) && band < filters.Count)
             filters[band] = p;
         var success = await Task.Run(() => { lock (_filterWriteGate) return _device.SetFilter(channel, band, p); });
@@ -2182,7 +2184,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return success;
     }
 
-    private CancellationTokenSource? _filterDebounceCts;
+    private readonly Dictionary<(int Channel, int WireBand), CancellationTokenSource> _filterDebounceCts = new();
 
     /// <summary>
     /// Update filter locally and fire events immediately, deferring the USB send.
@@ -2204,9 +2206,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FiltersChanged?.Invoke(this, EventArgs.Empty);
         CheckDirty();
 
-        _filterDebounceCts?.Cancel();
-        _filterDebounceCts = new CancellationTokenSource();
-        var token = _filterDebounceCts.Token;
+        var token = RestartDeferredFilterSend(channel, band);
         Task.Run(async () =>
         {
             try
@@ -2214,6 +2214,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 await Task.Delay(500, token);
                 lock (_filterWriteGate)
                 {
+                    // Re-checked under the gate: an authoritative write to this
+                    // band may have cancelled us after the delay elapsed.
+                    if (token.IsCancellationRequested) return;
                     _device.SetFilter(channel, band, p);
                     if (IsInputPairLinked(channel))
                         _device.SetFilter(GetLinkedInputChannel(channel), band, p);
@@ -2221,6 +2224,35 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             catch (TaskCanceledException) { }
         });
+    }
+
+    /// <summary>
+    /// Starts a band's deferred-send debounce, cancelling only that band's
+    /// previous one: an edit on another band must not drop this band's pending
+    /// write. Keyed by wire band, so crossover bands (20..23) don't collide
+    /// with PEQ bands.
+    /// </summary>
+    private CancellationToken RestartDeferredFilterSend(int channel, int wireBand)
+    {
+        var cts = new CancellationTokenSource();
+        lock (_filterDebounceCts)
+        {
+            if (_filterDebounceCts.Remove((channel, wireBand), out var old)) old.Cancel();
+            _filterDebounceCts[(channel, wireBand)] = cts;
+        }
+        return cts.Token;
+    }
+
+    /// <summary>
+    /// Drops a band's pending deferred send, so an older wheel value can't
+    /// land after an authoritative write to the same band.
+    /// </summary>
+    private void CancelDeferredFilterSend(int channel, int wireBand)
+    {
+        lock (_filterDebounceCts)
+        {
+            if (_filterDebounceCts.Remove((channel, wireBand), out var old)) old.Cancel();
+        }
     }
 
     // ── Input-pair linking (Master L/R + IN3/4, IN5/6, IN7/8) ──
@@ -3445,10 +3477,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<bool> SetXoverFilter(int channel, int localBand, FilterParams p)
     {
         CancelLiveFilterSends();   // this awaited write is authoritative — no stale live write after it
+        int wireBand = CrossoverFilter.XoverBandBase + localBand;
+        CancelDeferredFilterSend(channel, wireBand);
         if (_xoverData.TryGetValue(channel, out var bands) && localBand < bands.Count)
             bands[localBand] = p;
 
-        int wireBand = CrossoverFilter.XoverBandBase + localBand;
         var success = await Task.Run(() => { lock (_filterWriteGate) return _device.SetFilter(channel, wireBand, p); });
 
         FiltersChanged?.Invoke(this, EventArgs.Empty);
@@ -3459,8 +3492,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Crossover counterpart to <see cref="SetFilterDeferred"/>: updates the
     /// cache immediately and debounces the USB write (500 ms) so wheel-scrubbing
-    /// a crossover frequency doesn't flood the bus. Shares the same debounce CTS
-    /// as PEQ edits — only one band is ever being scrubbed at a time.
+    /// a crossover frequency doesn't flood the bus. Debounced per band, like
+    /// PEQ edits.
     /// </summary>
     public void SetXoverFilterDeferred(int channel, int localBand, FilterParams p)
     {
@@ -3471,15 +3504,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CheckDirty();
 
         int wireBand = CrossoverFilter.XoverBandBase + localBand;
-        _filterDebounceCts?.Cancel();
-        _filterDebounceCts = new CancellationTokenSource();
-        var token = _filterDebounceCts.Token;
+        var token = RestartDeferredFilterSend(channel, wireBand);
         Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(500, token);
-                _device.SetFilter(channel, wireBand, p);
+                lock (_filterWriteGate)
+                {
+                    if (token.IsCancellationRequested) return;
+                    _device.SetFilter(channel, wireBand, p);
+                }
             }
             catch (TaskCanceledException) { }
         });

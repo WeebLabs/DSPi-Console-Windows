@@ -34,10 +34,12 @@ public partial class MainViewModel : IPeqEditorHost
         var writes = new List<(int Channel, int Band, FilterParams Params)>();
         foreach (var (band, p) in changes)
         {
+            CancelDeferredFilterSend(channel, band);
             SetModelBand(channel, band, p.Clone());
             writes.Add((channel, band, p.Clone()));
             if (partner >= 0)
             {
+                CancelDeferredFilterSend(partner, band);
                 SetModelBand(partner, band, p.Clone());
                 writes.Add((partner, band, p.Clone()));
             }
