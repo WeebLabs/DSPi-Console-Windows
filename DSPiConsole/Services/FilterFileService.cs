@@ -95,22 +95,24 @@ public static class FilterFileService
         if (filter.Type == FilterType.LinkwitzTransform)
         {
             return string.Format(inv,
-                "Filter {0,2}: ON  {1,-8}Fc {2,7:F1} Hz  Q {3,5:F2}  Fp {4,7:F1} Hz  Qp {5,5:F2}",
+                "Filter {0,2}: ON  {1,-8}Fc {2,8:F2} Hz  Q {3,6:F3}  Fp {4,8:F2} Hz  Qp {5,6:F3}",
                 index, typeCode, filter.Frequency, filter.Q, filter.Gain, filter.Qp)
                 + BypassTag(filter);
         }
 
-        var line = string.Format(inv, "Filter {0,2}: ON  {1,-8}Fc {2,7:F1} Hz",
+        // Enough decimals that an export/import round trip doesn't move a band:
+        // a graph drag leaves fractional values, and 0.707 must not become 0.71.
+        var line = string.Format(inv, "Filter {0,2}: ON  {1,-8}Fc {2,8:F2} Hz",
             index, typeCode, filter.Frequency);
 
         if (filter.Type.HasGain())
         {
-            line += string.Format(inv, "  Gain {0,5:+0.0;-0.0} dB", filter.Gain);
+            line += string.Format(inv, "  Gain {0,7:+0.000;-0.000} dB", filter.Gain);
         }
 
         if (filter.Type.HasQ())
         {
-            line += string.Format(inv, "  Q {0,5:F2}", filter.Q);
+            line += string.Format(inv, "  Q {0,6:F3}", filter.Q);
         }
 
         return line + BypassTag(filter);
@@ -131,7 +133,7 @@ public static class FilterFileService
         }
 
         return string.Format(inv,
-            "Crossover {0,2}: ON  {1,-6} {2}  Fc {3,7:F1} Hz  Slope {4,3} dB/oct",
+            "Crossover {0,2}: ON  {1,-6} {2}  Fc {3,8:F2} Hz  Slope {4,3} dB/oct",
             index,
             CrossoverFilter.FamilyShortName(meta.Family),
             meta.IsHighPass ? "HP" : "LP",
