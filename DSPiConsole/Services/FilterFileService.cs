@@ -156,18 +156,20 @@ public static class FilterFileService
                     Format = FilterFileFormat.DSPiConsole,
                     ChannelFilters = parsed.Value.Peq,
                     ChannelXoverFilters = parsed.Value.Xover.Count > 0 ? parsed.Value.Xover : null,
+                    ChannelPreamps = parsed.Value.Preamps.Count > 0 ? parsed.Value.Preamps : null,
                 };
             }
         }
 
         // Try REW format
-        var filters = ParseREWFormat(contents);
+        var filters = ParseREWFormat(contents, out var preamp);
         if (filters != null && filters.Count > 0)
         {
             return new ParseResult
             {
                 Format = FilterFileFormat.REW,
                 SingleChannelFilters = filters,
+                SinglePreamp = preamp,
             };
         }
 
@@ -179,11 +181,12 @@ public static class FilterFileService
     /// crossover bands as separate per-channel dictionaries (crossover bands are
     /// only present for output channels written by V11+ exports).
     /// </summary>
-    private static (Dictionary<int, List<FilterParams>> Peq, Dictionary<int, List<FilterParams>> Xover)?
+    private static (Dictionary<int, List<FilterParams>> Peq, Dictionary<int, List<FilterParams>> Xover, Dictionary<int, float> Preamps)?
         ParseDSPiFormat(string contents, IReadOnlyList<Channel> outputs)
     {
         var result = new Dictionary<int, List<FilterParams>>();
         var xoverResult = new Dictionary<int, List<FilterParams>>();
+        var preamps = new Dictionary<int, float>();
         int? currentChannel = null;
 
         foreach (var line in contents.Split('\n', '\r'))
@@ -199,6 +202,13 @@ public static class FilterFileService
             }
 
             if (currentChannel == null) continue;
+
+            // Input trim ahead of the bands, as the macOS Console writes per input.
+            if (TryParsePreampLine(trimmed, out var preampDb))
+            {
+                preamps[currentChannel.Value] = preampDb;
+                continue;
+            }
 
             // Crossover band line (output channels, V11+). Checked before the PEQ
             // branch; "Crossover" (this app) and "Xover" (the macOS Console) lines
@@ -232,7 +242,7 @@ public static class FilterFileService
             }
         }
 
-        return result.Count > 0 || xoverResult.Count > 0 ? (result, xoverResult) : null;
+        return result.Count > 0 || xoverResult.Count > 0 ? (result, xoverResult, preamps) : null;
     }
 
     /// <summary>
@@ -257,6 +267,15 @@ public static class FilterFileService
             if (ch.Name.Equals(header, StringComparison.OrdinalIgnoreCase))
                 return (int)ch.Id;
         return null;
+    }
+
+    /// <summary>A "Preamp -6.5 dB" line (REW, AutoEQ and the macOS Console),
+    /// also REW's "Preamp: -6.5 dB".</summary>
+    private static bool TryParsePreampLine(string line, out float db)
+    {
+        db = 0f;
+        var m = Regex.Match(line, @"^Preamp\s*:?\s*([+-]?[\d.,]+)", RegexOptions.IgnoreCase);
+        return m.Success && TryParseDecimal(m.Groups[1].Value, out db);
     }
 
     /// <summary>
@@ -331,14 +350,22 @@ public static class FilterFileService
     /// <summary>
     /// Parses REW format (single-channel).
     /// </summary>
-    private static List<FilterParams>? ParseREWFormat(string contents)
+    private static List<FilterParams>? ParseREWFormat(string contents, out float? preamp)
     {
         var filters = new List<FilterParams>();
+        preamp = null;
 
         foreach (var line in contents.Split('\n', '\r'))
         {
             var trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed)) continue;
+            // AutoEQ's ParametricEQ.txt pairs its boosts with a negative preamp;
+            // dropping it would apply the boosts without their headroom.
+            if (preamp == null && TryParsePreampLine(trimmed, out var db))
+            {
+                preamp = db;
+                continue;
+            }
             if (!trimmed.Contains("Filter") || !trimmed.Contains(':')) continue;
 
             var filter = ParseFilterLine(trimmed);
@@ -495,5 +522,13 @@ public class ParseResult
     /// when the file contains no crossover sections (e.g. legacy or REW exports).
     /// </summary>
     public Dictionary<int, List<FilterParams>>? ChannelXoverFilters { get; set; }
+
+    /// <summary>Per-input preamp (dB) from a DSPi Console file's "Preamp" lines,
+    /// keyed by channel id, or null when it has none.</summary>
+    public Dictionary<int, float>? ChannelPreamps { get; set; }
+
     public List<FilterParams>? SingleChannelFilters { get; set; }
+
+    /// <summary>A REW/AutoEQ file's "Preamp" (dB), or null when it has none.</summary>
+    public float? SinglePreamp { get; set; }
 }

@@ -5815,11 +5815,11 @@ public sealed partial class MainWindow : Window
 
             if (result.Format == FilterFileFormat.DSPiConsole && result.ChannelFilters != null)
             {
-                await ImportMultiChannelFilters(result.ChannelFilters, result.ChannelXoverFilters);
+                await ImportMultiChannelFilters(result.ChannelFilters, result.ChannelXoverFilters, result.ChannelPreamps);
             }
             else if (result.Format == FilterFileFormat.REW && result.SingleChannelFilters != null)
             {
-                await ImportSingleChannelFilters(result.SingleChannelFilters);
+                await ImportSingleChannelFilters(result.SingleChannelFilters, result.SinglePreamp);
             }
         }
         catch (Exception ex)
@@ -5828,7 +5828,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task ImportSingleChannelFilters(List<FilterParams> filters)
+    private async Task ImportSingleChannelFilters(List<FilterParams> filters, float? preamp = null)
     {
         var dialog = new ChannelSelectionDialog { XamlRoot = Content.XamlRoot };
         dialog.ConfigureForSingleChannel(filters.Count, ViewModel.ActiveInputs, ViewModel.ActiveOutputs,
@@ -5850,6 +5850,17 @@ public sealed partial class MainWindow : Window
             if (dialog.SelectedChannelIds.Count > 0)
             {
                 var summary = $"Filters imported to {dialog.SelectedChannelIds.Count} channel(s)";
+                // The file's preamp is headroom for its boosts (AutoEQ writes a
+                // negative one), so it goes on the inputs as the AutoEQ browser
+                // applies a profile's.
+                if (preamp is { } db)
+                {
+                    float clamped = Math.Clamp(MathF.Round(db, 1), -60f, 10f);
+                    ViewModel.SetInputPreampAt(0, clamped);
+                    ViewModel.SetInputPreampAt(1, clamped);
+                    summary += string.Format(CultureInfo.InvariantCulture,
+                        "\n\nPreamp set to {0:+0.0;-0.0} dB on Master L/R.", clamped);
+                }
                 summary += TruncationNote(dialog.SelectedChannelIds.Select(id => (id, (List<FilterParams>?)filters)));
                 await ShowSuccessDialog(summary);
             }
@@ -5858,7 +5869,8 @@ public sealed partial class MainWindow : Window
 
     private async Task ImportMultiChannelFilters(
         Dictionary<int, List<FilterParams>> channelFilters,
-        Dictionary<int, List<FilterParams>>? channelXover = null)
+        Dictionary<int, List<FilterParams>>? channelXover = null,
+        Dictionary<int, float>? channelPreamps = null)
     {
         // Every channel the file mentions, PEQ or crossover.
         var inFile = new HashSet<int>(channelFilters.Keys);
@@ -5896,6 +5908,13 @@ public sealed partial class MainWindow : Window
             {
                 await ShowErrorDialog("Communication Failure - Unable to perform operation");
                 return;
+            }
+            // An input's preamp, which the macOS Console writes per input.
+            if (channelPreamps != null && channelPreamps.TryGetValue(channelId, out var preampDb))
+            {
+                int wireInput = Channel.AllInputs.ToList().FindIndex(c => (int)c.Id == channelId);
+                if (wireInput >= 0)
+                    ViewModel.SetInputPreampAt(wireInput, Math.Clamp(MathF.Round(preampDb, 1), -60f, 10f));
             }
             applied++;
         }
