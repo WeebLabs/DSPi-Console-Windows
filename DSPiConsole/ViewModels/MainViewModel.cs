@@ -378,6 +378,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // it arrives (see InputSourceNotified). UI-thread only.
     private InputSource? _requestedInputSource;
 
+    // Bumped on the notify thread for every input-source notification, so a
+    // bulk read that overlapped one knows its input source is older than the
+    // notification's and leaves ActiveInputSource alone.
+    private int _inputSourceNotifySeq;
+
+    // A preset load or factory reset sets a new input source, but the firmware
+    // applies it in its main loop after the fade and DAC mute hold (500 ms at
+    // most), which can land after the refetch that took the saved baseline.
+    // Until this time, a source switch the user didn't ask for is the load's
+    // own and moves the baseline with it instead of reading as an edit.
+    // UI-thread only.
+    private DateTime _presetSourceSettleUntil;
+    private static readonly TimeSpan PresetSourceSettleTime = TimeSpan.FromSeconds(3);
+
     [ObservableProperty]
     private InputSource _activeInputSource = InputSource.Usb;
 
@@ -867,7 +881,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     if (src == ParamSource.Preset || src == ParamSource.Factory)
                     {
-                        UpdateSavedSnapshot();
+                        UpdateSavedSnapshotAfterLoad();
                         PresetsDirty = false;
                         _suppressDirtyCheck = false;
                     }
@@ -901,6 +915,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 previousSource = _lastNotifiedSource;
                 _lastNotifiedSource = newSource;
             }
+            Interlocked.Increment(ref _inputSourceNotifySeq);
 
             // Fetch the firmware's user_volume on the notify thread BEFORE we
             // dispatch any UI state changes. The sidebar slider tracks
@@ -931,7 +946,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 // refetch, and must not read as an edit.
                 bool requested = _requestedInputSource == newSource;
                 _requestedInputSource = null;
-                if (requested) CheckDirty();
+                if (requested)
+                {
+                    CheckDirty();
+                }
+                else if (DateTime.UtcNow < _presetSourceSettleUntil && _savedSnapshot != null)
+                {
+                    // The load's own source switch, landing after its baseline.
+                    _presetSourceSettleUntil = default;
+                    _savedSnapshot.InputSource = newSource;
+                    CheckDirty();
+                }
             });
         };
 
@@ -1687,13 +1712,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var outputs = OutputsForPlatform(syncPlatform);
 
             // Try bulk fetch first (firmware v2+ with 0xA0 support)
+            int sourceNotifySeq = Volatile.Read(ref _inputSourceNotifySeq);
             var bulk = _device.GetAllParams();
             if (bulk != null)
             {
                 var parsed = BulkParamsParser.Parse(bulk);
                 if (parsed != null)
                 {
-                    ApplyBulkParams(parsed, outputs);
+                    ApplyBulkParams(parsed, outputs, sourceNotifySeq);
                     RefreshUsbInputChannelCount();
                     // Probe siggen support so features gated on it (sidebar
                     // Identify) work without opening the Test Signals window.
@@ -1719,7 +1745,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch { }
     }
 
-    private void ApplyBulkParams(BulkParams bp, IReadOnlyList<Channel> outputs)
+    private void ApplyBulkParams(BulkParams bp, IReadOnlyList<Channel> outputs, int sourceNotifySeq)
     {
         // Record the wire-format version so per-band GET (REQ_GET_EQ_PARAM)
         // uses the matching wValue band-field width (V11 widened it to 5 bits).
@@ -1980,7 +2006,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     or InputSource.Adat or InputSource.Spdif2 or InputSource.Spdif3
                     or InputSource.Spdif4)
             {
-                if (ActiveInputSource != src)
+                // A source notification since the read started is newer than
+                // the read's value (a preset load's switch can land mid-read):
+                // its own handler sets the source.
+                if (ActiveInputSource != src && Volatile.Read(ref _inputSourceNotifySeq) == sourceNotifySeq)
                     ActiveInputSource = src;
                 InputSourceSupported = true;
                 InputSourceChanged?.Invoke(this, EventArgs.Empty);
@@ -3247,7 +3276,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 FetchAll();
                 _dispatcher.TryEnqueue(() =>
                 {
-                    UpdateSavedSnapshot();
+                    UpdateSavedSnapshotAfterLoad();
                     PresetsDirty = false;
                     _suppressDirtyCheck = false;
                 });
@@ -3712,7 +3741,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
                 _dispatcher.TryEnqueue(() =>
                 {
-                    UpdateSavedSnapshot();
+                    UpdateSavedSnapshotAfterLoad();
                     PresetsDirty = false;
                     _suppressDirtyCheck = false;
                     PresetsChanged?.Invoke(this, EventArgs.Empty);
@@ -3752,7 +3781,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     FetchAll();
                     _dispatcher.TryEnqueue(() =>
                     {
-                        UpdateSavedSnapshot();
+                        UpdateSavedSnapshotAfterLoad();
                         PresetsDirty = false;
                         _suppressDirtyCheck = false;
                         PresetsChanged?.Invoke(this, EventArgs.Empty);
@@ -3975,6 +4004,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _savedSnapshot = PresetSnapshot.Capture(this);
         ClearIoUndoLog(); // new baseline — prior IO edits are no longer undoable
+    }
+
+    /// <summary>The baseline after a preset load or factory reset, whose input
+    /// source switch may still be on its way (see _presetSourceSettleUntil).</summary>
+    private void UpdateSavedSnapshotAfterLoad()
+    {
+        UpdateSavedSnapshot();
+        _presetSourceSettleUntil = DateTime.UtcNow + PresetSourceSettleTime;
     }
 
     /// <summary>
