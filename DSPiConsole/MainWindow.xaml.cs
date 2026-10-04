@@ -471,6 +471,28 @@ public sealed partial class MainWindow : Window
                 OutputChannelsList.Items.Add(item);
             }
         }
+
+        SyncSelectedChannelIndex();
+        UpdateChannelListSelection();
+    }
+
+    /// <summary>
+    /// Points _selectedChannelIndex at the row of the channel the editor shows
+    /// (0 = dashboard, or that channel has no row). Rows are renumbered when
+    /// the list is rebuilt or an output is enabled or disabled, and a stale
+    /// index would make the first click on that row read as "same channel"
+    /// and go back to the dashboard.
+    /// </summary>
+    private void SyncSelectedChannelIndex()
+    {
+        _selectedChannelIndex = 0;
+        if (_selectedChannel == null) return;
+        foreach (var item in _channelListItems)
+            if (item.Tag is (Channel ch, int index) && ch.Id == _selectedChannel.Id)
+            {
+                _selectedChannelIndex = index;
+                return;
+            }
     }
 
     private void OnOutputEnabledChanged(int outputIndex, bool enabled)
@@ -507,6 +529,7 @@ public sealed partial class MainWindow : Window
             _channelListItems.Add(outItem);
         }
 
+        SyncSelectedChannelIndex();
         UpdateChannelListSelection();
     }
 
@@ -3085,6 +3108,7 @@ public sealed partial class MainWindow : Window
     private void ShowDashboard()
     {
         _selectedChannel = null;
+        _selectedChannelIndex = 0;
         FilterStatusBarHost.Visibility = Visibility.Collapsed;
         ChannelHeaderHost.Visibility = Visibility.Collapsed;
         ChannelHeaderHost.Child = null;
@@ -3193,6 +3217,7 @@ public sealed partial class MainWindow : Window
 
             // Return to empty dashboard view
             _selectedChannel = null;
+            _selectedChannelIndex = 0;
             FilterStatusBarHost.Visibility = Visibility.Collapsed;
             ChannelHeaderHost.Visibility = Visibility.Collapsed;
             ChannelHeaderHost.Child = null;
