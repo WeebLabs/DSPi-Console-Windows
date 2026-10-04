@@ -141,19 +141,21 @@ public static class FilterFileService
 
     /// <summary>
     /// Parses a filter file and returns the detected format and parsed data.
+    /// <paramref name="outputs"/> are the connected device's outputs, which the
+    /// macOS Console's index-keyed "[Output N: ...]" sections refer to.
     /// </summary>
-    public static ParseResult ParseFile(string contents)
+    public static ParseResult ParseFile(string contents, IReadOnlyList<Channel> outputs)
     {
         if (contents.TrimStart().StartsWith("# DSPi Console"))
         {
-            var parsed = ParseDSPiFormat(contents);
+            var parsed = ParseDSPiFormat(contents, outputs);
             if (parsed != null && (parsed.Value.Peq.Count > 0 || parsed.Value.Xover.Count > 0))
             {
                 return new ParseResult
                 {
                     Format = FilterFileFormat.DSPiConsole,
                     ChannelFilters = parsed.Value.Peq,
-                    ChannelXoverFilters = parsed.Value.Xover.Count > 0 ? parsed.Value.Xover : null
+                    ChannelXoverFilters = parsed.Value.Xover.Count > 0 ? parsed.Value.Xover : null,
                 };
             }
         }
@@ -165,7 +167,7 @@ public static class FilterFileService
             return new ParseResult
             {
                 Format = FilterFileFormat.REW,
-                SingleChannelFilters = filters
+                SingleChannelFilters = filters,
             };
         }
 
@@ -177,7 +179,8 @@ public static class FilterFileService
     /// crossover bands as separate per-channel dictionaries (crossover bands are
     /// only present for output channels written by V11+ exports).
     /// </summary>
-    private static (Dictionary<int, List<FilterParams>> Peq, Dictionary<int, List<FilterParams>> Xover)? ParseDSPiFormat(string contents)
+    private static (Dictionary<int, List<FilterParams>> Peq, Dictionary<int, List<FilterParams>> Xover)?
+        ParseDSPiFormat(string contents, IReadOnlyList<Channel> outputs)
     {
         var result = new Dictionary<int, List<FilterParams>>();
         var xoverResult = new Dictionary<int, List<FilterParams>>();
@@ -191,24 +194,17 @@ public static class FilterFileService
             // Check for channel header [Channel Name]
             if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
             {
-                var channelName = trimmed[1..^1];
-                currentChannel = null;
-                foreach (var ch in Channel.All)
-                {
-                    if (ch.Name.Equals(channelName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        currentChannel = (int)ch.Id;
-                        break;
-                    }
-                }
+                currentChannel = ResolveChannelHeader(trimmed[1..^1].Trim(), outputs);
                 continue;
             }
 
             if (currentChannel == null) continue;
 
             // Crossover band line (output channels, V11+). Checked before the PEQ
-            // branch; "Crossover" lines deliberately don't contain "Filter".
-            if (trimmed.StartsWith("Crossover", StringComparison.OrdinalIgnoreCase))
+            // branch; "Crossover" (this app) and "Xover" (the macOS Console) lines
+            // deliberately don't contain "Filter".
+            if (trimmed.StartsWith("Crossover", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("Xover", StringComparison.OrdinalIgnoreCase))
             {
                 if (!trimmed.Contains(':')) continue;
                 var xo = ParseXoverLine(trimmed);
@@ -240,6 +236,30 @@ public static class FilterFileService
     }
 
     /// <summary>
+    /// The channel a section header names: this app's bare channel name
+    /// ("Master L", "SPDIF 2 R", "PDM"), or the macOS Console's index-keyed
+    /// "Input N: name" (wire input N) and "Output N: name (Enabled)" (output N
+    /// of the connected device). Null for a header naming no channel here.
+    /// </summary>
+    private static int? ResolveChannelHeader(string header, IReadOnlyList<Channel> outputs)
+    {
+        var indexed = Regex.Match(header, @"^(Input|Output)\s+(\d+)\s*:", RegexOptions.IgnoreCase);
+        if (indexed.Success)
+        {
+            if (!int.TryParse(indexed.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
+                return null;
+            bool isInput = indexed.Groups[1].Value.Equals("Input", StringComparison.OrdinalIgnoreCase);
+            var list = isInput ? Channel.AllInputs : outputs;
+            return index < list.Count ? (int)list[index].Id : null;
+        }
+
+        foreach (var ch in Channel.All)
+            if (ch.Name.Equals(header, StringComparison.OrdinalIgnoreCase))
+                return (int)ch.Id;
+        return null;
+    }
+
+    /// <summary>
     /// Parses a single crossover band line, e.g.
     /// <c>Crossover  1: ON  LR     HP  Fc    80.0 Hz  Slope  24 dB/oct</c>.
     /// Returns a Flat band for OFF lines (to keep band indices aligned), or null
@@ -255,16 +275,36 @@ public static class FilterFileService
             return new FilterParams(FilterType.Flat, 1000, 0.707f, 0);
         }
 
-        // Family + shape tags, e.g. "ON  LR     HP" or "ON  Bessel LP". Read as
-        // one anchored pair so the tokens can't be picked up out of order.
-        var tagMatch = Regex.Match(line, @"\bON\s+(\S+)\s+(HP|LP)\b", RegexOptions.IgnoreCase);
-        if (!tagMatch.Success) return null;
+        // The macOS Console writes one code: family, order and shape, e.g.
+        // "ON  LR4LP" or "ON  BES2HP" (an order, not a slope).
+        var codeMatch = Regex.Match(line, @"\bON\s+(LR|BW|BES)(\d)(LP|HP)\b", RegexOptions.IgnoreCase);
+        int? codeOrder = null;
+        XoverFamily family;
+        bool isHighPass;
+        if (codeMatch.Success)
+        {
+            family = codeMatch.Groups[1].Value.ToUpperInvariant() switch
+            {
+                "LR" => XoverFamily.LinkwitzRiley,
+                "BW" => XoverFamily.Butterworth,
+                _ => XoverFamily.Bessel,
+            };
+            codeOrder = codeMatch.Groups[2].Value[0] - '0';
+            isHighPass = codeMatch.Groups[3].Value.Equals("HP", StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            // Family + shape tags, e.g. "ON  LR     HP" or "ON  Bessel LP". Read as
+            // one anchored pair so the tokens can't be picked up out of order.
+            var tagMatch = Regex.Match(line, @"\bON\s+(\S+)\s+(HP|LP)\b", RegexOptions.IgnoreCase);
+            if (!tagMatch.Success) return null;
 
-        var parsedFamily = CrossoverFilter.ParseShortFamily(tagMatch.Groups[1].Value);
-        if (parsedFamily is null or XoverFamily.None) return null;
-        var family = parsedFamily.Value;
+            var parsedFamily = CrossoverFilter.ParseShortFamily(tagMatch.Groups[1].Value);
+            if (parsedFamily is null or XoverFamily.None) return null;
+            family = parsedFamily.Value;
 
-        bool isHighPass = tagMatch.Groups[2].Value.Equals("HP", StringComparison.OrdinalIgnoreCase);
+            isHighPass = tagMatch.Groups[2].Value.Equals("HP", StringComparison.OrdinalIgnoreCase);
+        }
 
         // Frequency (Fc XXX Hz)
         float freq = 1000f;
@@ -275,9 +315,9 @@ public static class FilterFileService
         }
 
         // Slope (NN dB/oct) → filter order = slope / 6
-        int order = 4;
+        int order = codeOrder ?? 4;
         var slopeMatch = Regex.Match(line, @"Slope\s+(\d+)", RegexOptions.IgnoreCase);
-        if (slopeMatch.Success && int.TryParse(slopeMatch.Groups[1].Value, out var slope) && slope >= 6)
+        if (codeOrder == null && slopeMatch.Success && int.TryParse(slopeMatch.Groups[1].Value, out var slope) && slope >= 6)
         {
             order = slope / 6;
         }
@@ -349,7 +389,7 @@ public static class FilterFileService
             filterType = FilterType.LowShelf;
         else if (upper.Contains(" HS ") || upper.Contains(" HSC ") || upper.Contains(" HSQ "))
             filterType = FilterType.HighShelf;
-        else if (upper.Contains(" NO ") || upper.Contains(" NOTCH "))
+        else if (upper.Contains(" NO ") || upper.Contains(" NT ") || upper.Contains(" NOTCH "))
             filterType = FilterType.Notch;
         else if (upper.Contains(" AP ") || upper.Contains(" ALLPASS "))
             filterType = FilterType.AllPass;
@@ -397,8 +437,9 @@ public static class FilterFileService
                 filter.Qp = qpVal;
         }
 
-        // Per-band bypass marker (firmware 1.1.4+).
-        filter.Bypass = upper.Contains(" BYP");
+        // Per-band bypass marker (firmware 1.1.4+): " BYP" here, "[Bypassed]" in
+        // the macOS Console's files.
+        filter.Bypass = upper.Contains(" BYP") || upper.Contains("[BYPASSED]");
 
         return filter;
     }

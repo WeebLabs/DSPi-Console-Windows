@@ -5805,7 +5805,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var contents = await Windows.Storage.FileIO.ReadTextAsync(file);
-            var result = FilterFileService.ParseFile(contents);
+            var result = FilterFileService.ParseFile(contents, ViewModel.ActiveOutputs);
 
             if (result.Format == FilterFileFormat.Unknown)
             {
