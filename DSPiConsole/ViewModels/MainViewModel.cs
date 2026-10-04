@@ -3710,7 +3710,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     ActivePreset = slot;
                     PresetsDirty = false;
-                    UpdateSavedSnapshot();
+                    UpdatePresetBaseline();
                     PresetsChanged?.Invoke(this, EventArgs.Empty);
                 });
             }
@@ -4006,11 +4006,32 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ClearIoUndoLog(); // new baseline — prior IO edits are no longer undoable
     }
 
+    /// <summary>
+    /// The baseline after a preset save, load or delete, or a factory reset. In
+    /// independent mode the output config is device-global: the firmware neither
+    /// saves it with a preset nor changes it on a load or reset, so output-config
+    /// edits not yet saved with "Save Output Config" stay pending, with their
+    /// baseline and undo log.
+    /// </summary>
+    private void UpdatePresetBaseline()
+    {
+        if (OutputConfigMode == 0 && _savedSnapshot is { } old)
+        {
+            var snap = PresetSnapshot.Capture(this);
+            snap.CopyIoBlockFrom(old);
+            _savedSnapshot = snap;
+        }
+        else
+        {
+            UpdateSavedSnapshot();
+        }
+    }
+
     /// <summary>The baseline after a preset load or factory reset, whose input
     /// source switch may still be on its way (see _presetSourceSettleUntil).</summary>
     private void UpdateSavedSnapshotAfterLoad()
     {
-        UpdateSavedSnapshot();
+        UpdatePresetBaseline();
         _presetSourceSettleUntil = DateTime.UtcNow + PresetSourceSettleTime;
     }
 
