@@ -11,7 +11,7 @@ public class AppSettings
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "DSPiConsole", "settings.json");
 
-    public bool ShowGraphGlow { get; set; } = true;
+    public bool ShowGraphGlow { get; set; } = false;
 
     // ── Onboarding (Services/Onboarding.cs) and What's New ──
     // Null means never written, which is how a first onboarding launch is told
@@ -90,7 +90,7 @@ public class AppSettings
         }
     }
 
-    public double GraphLineWidth { get; set; } = 2.0;
+    public double GraphLineWidth { get; set; } = 1.0;
     public double GraphAnimationSpeed { get; set; } = 0.2;
     public bool ShowDebugInfo { get; set; }
 
@@ -108,7 +108,7 @@ public class AppSettings
     public bool ShowDbUnits { get; set; } = true;
 
     // Grid line strength: 0 hides the grid, 1 is standard, 2 twice as strong.
-    public double GraphGridOpacity { get; set; } = 0.5;
+    public double GraphGridOpacity { get; set; } = 0.4;
 
     // Readouts that follow the pointer over empty graph while editing bands:
     // frequency along the bottom, level along the left edge.

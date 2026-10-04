@@ -2,6 +2,9 @@
 
 ## 2026-10-03
 
+### Graph
+- New defaults: glow off, grid opacity 40 % and 1 px lines (settings already saved are kept)
+
 ### Menu
 - The main menu gathers Loudness Compensation, Crossfeed, Psychoacoustic Bass, Subharmonic Synthesizer, Tube Modeller, Stereo Upmixer and Volume Leveller into an Effects submenu; their shortcuts are unchanged
 
