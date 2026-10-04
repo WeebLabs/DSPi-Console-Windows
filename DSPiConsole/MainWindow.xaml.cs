@@ -210,7 +210,10 @@ public sealed partial class MainWindow : Window
             BodePlot.Invalidate();
             ScheduleDashboardRefresh();
             if (_selectedChannel != null && !_isScrollAdjusting && !_isUpdatingGain && !_isUpdatingDelay)
-                ShowChannelEditor(_selectedChannel);
+            {
+                if (_inlineFilterCommits > 0) RefreshPeqRowValuesInPlace();
+                else ShowChannelEditor(_selectedChannel);
+            }
         };
         // On-graph editing: the band list follows a graph drag through live
         // values, and shares the graph's selection and hover.
@@ -2499,14 +2502,21 @@ public sealed partial class MainWindow : Window
             Style = (Style)RootGrid.Resources["InlineValueTextBoxStyle"]
         };
 
-        void Commit()
+        async void Commit()
         {
-            if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hz))
-            {
-                hz = Math.Clamp(hz, 10f, 20000f);
-                var np = new FilterParams(p.Type, hz, p.Q, p.Gain) { Bypass = p.Bypass };
-                _ = ViewModel.SetXoverFilter((int)channel.Id, localBand, np);
-            }
+            if (!float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hz)) return;
+            // Unchanged: no write, and no editor rebuild (see OnFilterValueChanged).
+            if (float.TryParse(FormatFilterValue(p.Frequency, 2), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var shown) && shown == hz)
+                return;
+            hz = Math.Clamp(hz, 10f, 20000f);
+            var np = new FilterParams(p.Type, hz, p.Q, p.Gain) { Bypass = p.Bypass };
+            p.Frequency = hz; // keep closure in sync, as the wheel handler does
+            textBox.Text = FormatFilterValue(hz, 2);
+            _inlineFilterCommits++;
+            try { await ViewModel.SetXoverFilter((int)channel.Id, localBand, np); }
+            catch { }
+            finally { _inlineFilterCommits--; }
         }
 
         textBox.LostFocus += (_, _) => Commit();
@@ -2550,7 +2560,7 @@ public sealed partial class MainWindow : Window
             ViewModel.SetXoverFilterDeferred((int)channel.Id, localBand, np);
             _isScrollAdjusting = false;
             p.Frequency = hz; // keep closure in sync for successive ticks
-            textBox.Text = FormatFilterValue(hz, 0);
+            textBox.Text = FormatFilterValue(hz, 2);
             e.Handled = true;
         };
 
@@ -3065,7 +3075,7 @@ public sealed partial class MainWindow : Window
             _isScrollAdjusting = false;
             textBox.Text = FormatFilterValue(
                 tag.param == "freq" ? p.Frequency : tag.param == "q" ? p.Q : p.Gain,
-                tag.param == "q" ? 3 : tag.param == "freq" ? 0 : 2);
+                tag.param == "q" ? 3 : 2);
             e.Handled = true;
         };
 
@@ -4253,35 +4263,73 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnFilterValueChanged(object sender, RoutedEventArgs e)
+    // Inline filter-field writes in flight. While non-zero, FiltersChanged
+    // updates the band rows in place instead of rebuilding the editor, which
+    // would destroy the box the user just tabbed or clicked into.
+    private int _inlineFilterCommits;
+
+    private async void OnFilterValueChanged(object sender, RoutedEventArgs e)
     {
-        if (sender is TextBox textBox && textBox.Tag is (Channel channel, int bandIndex, string param))
+        if (sender is not TextBox textBox || textBox.Tag is not (Channel channel, int bandIndex, string param)) return;
+        if (!float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value)) return;
+        var filters = ViewModel.GetFilters(channel);
+        if (bandIndex >= filters.Count) return;
+        var p = filters[bandIndex].Clone();
+
+        // Same precision the row displays (CreateValueField / FlushLiveRows).
+        // LT's fp/Qp are not edited inline — they live in the Apply/Cancel
+        // popover (BuildLinkwitzEditorButton).
+        (float current, int decimals) = param switch
         {
-            if (float.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
-            {
-                var filters = ViewModel.GetFilters(channel);
-                if (bandIndex < filters.Count)
-                {
-                    var p = filters[bandIndex].Clone();
+            "freq" => (p.Frequency, 2),
+            "q" => (p.Q, 3),
+            "gain" => (p.Gain, 2),
+            _ => (float.NaN, 0),
+        };
+        if (float.IsNaN(current)) return;
 
-                    switch (param)
-                    {
-                        case "freq":
-                            p.Frequency = Math.Clamp(value, 20, 20000);
-                            break;
-                        case "q":
-                            p.Q = Math.Clamp(value, 0.1f, 20);
-                            break;
-                        case "gain":
-                            p.Gain = Math.Clamp(value, -20, 20);
-                            break;
-                        // LT's fp/Qp are not edited inline — they live in the
-                        // Apply/Cancel popover (BuildLinkwitzEditorButton).
-                    }
+        // Unchanged (focus left without an edit, or Enter's second call when it
+        // moves focus): no write. This also keeps a value set on the graph
+        // beyond this field's range from being clamped just by visiting it.
+        if (float.TryParse(FormatFilterValue(current, decimals), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var shown) && shown == value)
+            return;
 
-                    _ = ViewModel.SetFilter((int)channel.Id, bandIndex, p);
-                }
-            }
+        float applied;
+        switch (param)
+        {
+            case "freq": applied = p.Frequency = Math.Clamp(value, 20, 20000); break;
+            case "q": applied = p.Q = Math.Clamp(value, 0.1f, 20); break;
+            default: applied = p.Gain = Math.Clamp(value, -20, 20); break;
+        }
+        textBox.Text = FormatFilterValue(applied, decimals);
+
+        _inlineFilterCommits++;
+        try { await ViewModel.SetFilter((int)channel.Id, bandIndex, p); }
+        catch { }
+        finally { _inlineFilterCommits--; }
+    }
+
+    /// <summary>Re-reads every band row's values from the model without
+    /// rebuilding the rows. The focused box is left alone so typing into it
+    /// isn't overwritten.</summary>
+    private void RefreshPeqRowValuesInPlace()
+    {
+        if (_selectedChannel == null || _filterPageIsXover) return;
+        var filters = ViewModel.GetFilters(_selectedChannel);
+        var focused = FocusManager.GetFocusedElement(RootGrid.XamlRoot);
+        foreach (var (band, refs) in _peqRows)
+        {
+            if (band >= filters.Count) continue;
+            var p = filters[band];
+            Set(refs.Freq, FormatFilterValue(p.Frequency, 2));
+            Set(refs.Q, FormatFilterValue(p.Q, 3));
+            Set(refs.Gain, FormatFilterValue(p.Gain, 2));
+        }
+
+        void Set(TextBox? box, string text)
+        {
+            if (box != null && !ReferenceEquals(box, focused) && box.Text != text) box.Text = text;
         }
     }
 
