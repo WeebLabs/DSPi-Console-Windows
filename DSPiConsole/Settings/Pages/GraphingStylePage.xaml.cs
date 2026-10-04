@@ -22,7 +22,17 @@ public sealed partial class GraphingStylePage : SettingsModule, ISettingsPage
 {
     private bool _suppress;
 
-    public GraphingStylePage() { InitializeComponent(); }
+    public GraphingStylePage()
+    {
+        // The sliders' XAML minimums move them off 0 while the page is being
+        // built, which raises ValueChanged before the named elements below them
+        // exist, and before Refresh has loaded the saved values. Suppressed, the
+        // handlers neither touch those elements nor save the coerced minimum;
+        // Refresh then shows the real values.
+        _suppress = true;
+        InitializeComponent();
+        _suppress = false;
+    }
 
     protected override void Refresh()
     {
@@ -59,12 +69,14 @@ public sealed partial class GraphingStylePage : SettingsModule, ISettingsPage
 
     private void OnLineWidthChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        if (_suppress) return;
         UpdateLineWidthDescription(e.NewValue);
         CommitDouble(e.NewValue, v => AppSettings.Instance.GraphLineWidth = v);
     }
 
     private void OnAnimSpeedChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        if (_suppress) return;
         UpdateAnimSpeedDescription(e.NewValue);
         CommitDouble(e.NewValue, v => AppSettings.Instance.GraphAnimationSpeed = v);
     }

@@ -20,7 +20,17 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
 {
     private bool _suppress;
 
-    public GraphingScalePage() { InitializeComponent(); }
+    public GraphingScalePage()
+    {
+        // The sliders' XAML minimums move them off 0 while the page is being
+        // built, which raises ValueChanged before the named elements below them
+        // exist, and before Refresh has loaded the saved values. Suppressed, the
+        // handlers neither touch those elements nor save the coerced minimum;
+        // Refresh then shows the real values.
+        _suppress = true;
+        InitializeComponent();
+        _suppress = false;
+    }
 
     protected override void Refresh()
     {
@@ -50,6 +60,7 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
 
     private void OnDbRangeChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        if (_suppress) return;
         UpdateRangeDescription(e.NewValue);
         UpdateCenterDescription(DbCenterSlider.Value, e.NewValue);
         Commit(() => AppSettings.Instance.GraphDbRange = e.NewValue);
@@ -57,6 +68,7 @@ public sealed partial class GraphingScalePage : SettingsModule, ISettingsPage
 
     private void OnDbCenterChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        if (_suppress) return;
         UpdateCenterDescription(e.NewValue, DbRangeSlider.Value);
         Commit(() => AppSettings.Instance.GraphDbCenter = e.NewValue);
     }
