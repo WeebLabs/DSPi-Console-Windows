@@ -6374,6 +6374,10 @@ public sealed partial class MainWindow : Window
         foreach (var skipped in report.Skipped)
             lines.Add($"Skipped: {skipped}");
 
+        if (report.NotWritten.Count > 0)
+            lines.Add($"The device did not accept: {string.Join(", ", report.NotWritten)}. " +
+                      "Those bands show the imported values but the device kept its own.");
+
         // Everything landed in RAM. Saying so avoids the trap of power-cycling
         // and losing the whole import. "Preset slot" rather than "preset", to
         // keep it distinct from the file that was just imported.
@@ -6382,7 +6386,8 @@ public sealed partial class MainWindow : Window
 
         // Anything the device refused or couldn't do isn't a success, so don't
         // put a "Success" heading over it.
-        bool clean = report.MissingChannels.Count == 0 && report.Skipped.Count == 0;
+        bool clean = report.MissingChannels.Count == 0 && report.Skipped.Count == 0
+                     && report.NotWritten.Count == 0;
         var text = string.Join("\n\n", lines);
         if (clean)
             await ShowSuccessDialog(text);

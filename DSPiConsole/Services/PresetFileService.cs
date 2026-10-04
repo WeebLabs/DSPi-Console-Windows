@@ -38,6 +38,10 @@ public sealed class PresetApplyReport
     /// <summary>Blocks skipped because this firmware/platform lacks the feature,
     /// or because applying them would have conflicted.</summary>
     public List<string> Skipped { get; } = new();
+
+    /// <summary>Writes the device didn't take even after retrying (a stall or
+    /// timeout); the app shows the imported value, the device doesn't have it.</summary>
+    public List<string> NotWritten { get; } = new();
 }
 
 /// <summary>
@@ -604,8 +608,8 @@ public static class PresetFileService
                     var fp = band < block.Eq.Count
                         ? Sanitize(vm, block.Eq[band].ToFilterParams(), report)
                         : new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f);
-                    await vm.SetFilter(id, band, fp);
-                    report.BandsApplied++;
+                    if (await WithRetry(() => vm.SetFilter(id, band, fp))) report.BandsApplied++;
+                    else report.NotWritten.Add($"{block.Name} EQ band {band + 1}");
                 }
             }
 
@@ -616,8 +620,8 @@ public static class PresetFileService
                     var fp = b < block.Crossover.Count
                         ? block.Crossover[b].ToFilterParams()
                         : new FilterParams(FilterType.Flat, 1000f, 0.707f, 0f);
-                    await vm.SetXoverFilter(id, b, fp);
-                    report.CrossoverBandsApplied++;
+                    if (await WithRetry(() => vm.SetXoverFilter(id, b, fp))) report.CrossoverBandsApplied++;
+                    else report.NotWritten.Add($"{block.Name} crossover band {b + 1}");
                 }
             }
 
@@ -659,6 +663,19 @@ public static class PresetFileService
         }
 
         return fp;
+    }
+
+    /// <summary>A filter write, tried up to three times: a single control
+    /// transfer can stall while the device is busy (the filter-file import
+    /// retries for the same reason).</summary>
+    private static async Task<bool> WithRetry(Func<Task<bool>> write)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            if (await write()) return true;
+            await Task.Delay(20);
+        }
+        return false;
     }
 
     private static void ApplyMatrix(MainViewModel vm, PresetDocument doc, PresetApplyReport report, Action tick)
