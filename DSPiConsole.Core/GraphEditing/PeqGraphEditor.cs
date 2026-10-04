@@ -1512,6 +1512,14 @@ public sealed class PeqGraphEditor : IDisposable
         switch (key)
         {
             case PeqKey.Delete:
+                // Pressed with the button still held: end the press or drag
+                // first, or the next move would rebuild the dragged bands from
+                // their starting copies and the release commit them back.
+                if (_gesture is GestureKind.Press or GestureKind.Drag)
+                {
+                    _gesture = GestureKind.Idle;
+                    _drag = null;
+                }
                 DeleteBands(_selection.ToList());
                 return true;
             case PeqKey.Escape:

@@ -1065,6 +1065,22 @@ public class PeqGraphEditorTests
         Near(3, back.Gain, 0.01);
     }
 
+    /// <summary>Delete with the button still held removes the band for good:
+    /// moving on and releasing must not bring it back.</summary>
+    [Fact]
+    public void DeleteMidDragSticks()
+    {
+        var rig = MakeRig(With((2, Band(FilterType.Peaking, 1000, 1.5f, 3))));
+        var start = rig.At(1000, 3);
+        rig.View.PointerPressed(start, PeqMods.None, 1);
+        rig.View.PointerDragged(new PeqPoint(start.X + 30, start.Y), PeqMods.None);
+        Assert.True(rig.View.KeyDown(PeqKey.Delete, PeqMods.None));
+        rig.View.PointerDragged(new PeqPoint(start.X + 60, start.Y - 10), PeqMods.None);
+        rig.View.PointerReleased(new PeqPoint(start.X + 60, start.Y - 10));
+        rig.Clock.Advance(1);
+        Assert.Equal(FilterType.Flat, rig.Host.Latest()[2].Type);
+    }
+
     [Fact]
     public void ArrowKeysNudgeAndCommitAfterAPause()
     {
