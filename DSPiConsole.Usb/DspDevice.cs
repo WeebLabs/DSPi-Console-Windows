@@ -3670,12 +3670,13 @@ public partial class DspDevice : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Set the name for a preset slot. Max 31 chars (32-byte UTF-8 buffer, null-terminated).
+    /// Set the name for a preset slot: at most 31 UTF-8 bytes (32-byte buffer,
+    /// null-terminated), cut at a character boundary.
     /// </summary>
     public bool SetPresetName(int slot, string name)
     {
         var data = new byte[32];
-        var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(ChannelNameLimit.Fit(name));
         Array.Copy(bytes, data, Math.Min(bytes.Length, 31));
         return ControlTransferOut(VendorCommands.PresetSetName, (ushort)slot, data);
     }

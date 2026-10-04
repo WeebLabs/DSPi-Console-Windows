@@ -3667,6 +3667,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<byte> CopyToPreset(int slot, string? name)
     {
         if (!IsDeviceConnected) return PresetResult.FlashWriteError;
+        // The device keeps 31 UTF-8 bytes: cache what it will hold, so the name
+        // doesn't change on the next read (a 31-character name with accents is
+        // longer than that).
+        if (name != null) name = ChannelNameLimit.Fit(name);
         return await Task.Run(() =>
         {
             if (!string.IsNullOrEmpty(name))
@@ -3687,6 +3691,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<byte> SavePreset(int slot, string? name)
     {
         if (!IsDeviceConnected) return PresetResult.FlashWriteError;
+        // The device keeps 31 UTF-8 bytes: cache what it will hold, so the name
+        // doesn't change on the next read (a 31-character name with accents is
+        // longer than that).
+        if (name != null) name = ChannelNameLimit.Fit(name);
         return await Task.Run(() =>
         {
             if (!string.IsNullOrEmpty(name))
@@ -3821,6 +3829,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task<bool> RenamePreset(int slot, string name)
     {
         if (!IsDeviceConnected) return false;
+        name = ChannelNameLimit.Fit(name);   // what the device will hold (31 UTF-8 bytes)
         return await Task.Run(() =>
         {
             var ok = _device.SetPresetName(slot, name);
