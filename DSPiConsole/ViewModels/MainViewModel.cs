@@ -374,6 +374,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly object _lastNotifiedSourceLock = new();
     private InputSource? _lastNotifiedSource;
 
+    // The source the user last picked, until the firmware's notification for
+    // it arrives (see InputSourceNotified). UI-thread only.
+    private InputSource? _requestedInputSource;
+
     [ObservableProperty]
     private InputSource _activeInputSource = InputSource.Usb;
 
@@ -919,6 +923,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     ActiveInputSource = newSource;
                 InputSourceSupported = true;
                 InputSourceChanged?.Invoke(this, EventArgs.Empty);
+                // The source is part of the preset, and a switch the user asked
+                // for only lands here (the firmware applies it later and
+                // notifies), so the dirty check in SetInputSourceAsync runs too
+                // early to see it. Only for the user's own switch: a preset
+                // load also switches the source this way, after its bulk
+                // refetch, and must not read as an edit.
+                bool requested = _requestedInputSource == newSource;
+                _requestedInputSource = null;
+                if (requested) CheckDirty();
             });
         };
 
@@ -3597,6 +3610,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public Task SetInputSourceAsync(InputSource source)
     {
         if (!IsDeviceConnected || !InputSourceSupported) return Task.CompletedTask;
+        _requestedInputSource = source;
         return Task.Run(() =>
         {
             _device.SetInputSource(source);
