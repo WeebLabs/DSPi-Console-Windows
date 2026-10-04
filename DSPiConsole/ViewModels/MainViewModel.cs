@@ -3773,10 +3773,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 // device state and the saved snapshot isn't stale.
                 if (slot == _activePresetSlot)
                 {
-                    // Firmware defers the flash erase + live-state reset to its
-                    // main loop (~45ms). Wait before fetching so we don't read
-                    // back the old parameters.
-                    System.Threading.Thread.Sleep(50);
+                    // Firmware defers the erase and live-state reset to its main
+                    // loop, after the fade and the DAC mute hold (up to ~500 ms),
+                    // and sends no BULK_INVALIDATED for it, so a read taken too
+                    // early would keep the old preset on screen for good. The
+                    // main loop also answers control requests, so once the
+                    // directory shows the slot empty the reset has run too.
+                    WaitForPresetDeletion(slot);
                     _suppressDirtyCheck = true;
                     FetchAll();
                     _dispatcher.TryEnqueue(() =>
@@ -3794,6 +3797,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             return result;
         });
+    }
+
+    /// <summary>
+    /// Polls the preset directory until the slot reads empty (the firmware has
+    /// run the deferred delete), as the macOS Console does. Gives up after
+    /// 1.5 s; the caller's refetch then shows whatever the device has.
+    /// </summary>
+    private void WaitForPresetDeletion(int slot)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(1.5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (_device.GetPresetDirectory() is { } dir && (dir.OccupiedMask & (1 << slot)) == 0)
+                return;
+            System.Threading.Thread.Sleep(20);
+        }
     }
 
     /// <summary>
