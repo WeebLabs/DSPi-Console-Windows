@@ -1017,6 +1017,35 @@ public class PeqGraphEditorTests
         Assert.Equal(new[] { 0, 1, 2 }, rig.Host.Selection.Selected.Order());
     }
 
+    /// <summary>A band below the axis floor (a 12 Hz subsonic cut, axis from
+    /// 20 Hz) moves with a selection drag by ratio but is never pulled up onto
+    /// the axis; a purely vertical drag leaves its frequency alone.</summary>
+    [Fact]
+    public void SelectionDragLeavesAnOffAxisBandWhereItIs()
+    {
+        var rig = MakeRig(With((0, Band(FilterType.Peaking, 12, 1, -6)), (1, Band(FilterType.Peaking, 1000, 1, 0))));
+        rig.Host.Selection.SetSelected(new[] { 0, 1 });
+        rig.Drag(rig.At(1000, 0), rig.At(1000, 6));
+        var latest = rig.Host.Latest();
+        Near(1000, latest[1].Frequency, 1);
+        if (latest.TryGetValue(0, out var sub))
+            Near(12, sub.Frequency, 0.01, "the off-axis band keeps its frequency");
+    }
+
+    [Fact]
+    public void NudgeLeavesAnOffAxisBandWhereItIs()
+    {
+        var rig = MakeRig(With((0, Band(FilterType.Peaking, 12, 1, -6))));
+        rig.Host.Selection.SetSelected(new[] { 0 });
+        rig.View.KeyDown(PeqKey.Left, PeqMods.None);
+        rig.Clock.Advance(0.5);
+        if (rig.Host.Latest().TryGetValue(0, out var left))
+            Near(12, left.Frequency, 0.01, "not pulled up to the 20 Hz floor");
+        rig.View.KeyDown(PeqKey.Right, PeqMods.None);
+        rig.Clock.Advance(0.5);
+        Near(12 * Math.Pow(2, 1.0 / 12), rig.Host.Latest()[0].Frequency, 0.01, "it can still move toward the axis");
+    }
+
     [Fact]
     public void ArrowKeysNudgeAndCommitAfterAPause()
     {

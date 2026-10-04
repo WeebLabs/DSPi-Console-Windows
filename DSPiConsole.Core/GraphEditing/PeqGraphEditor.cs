@@ -433,6 +433,21 @@ public sealed class PeqGraphEditor : IDisposable
 
     private double ClampToRange(double f) { var (lo, hi) = FreqRange; return PeqLimits.Clamp(f, lo, hi); }
 
+    /// <summary>
+    /// A band's frequency moved from <paramref name="start"/>, clamped to the
+    /// axis like <see cref="ClampToRange"/>, except that a band already off the
+    /// axis (a 12 Hz subsonic cut under the default 15 Hz floor, a shelf above a
+    /// lowered maximum) is never pulled onto it: it may move toward the axis but
+    /// no further out. For bands moved along with others, not under the pointer.
+    /// </summary>
+    private double ClampMoved(double start, double moved)
+    {
+        var (lo, hi) = FreqRange;
+        lo = Math.Max(PeqLimits.FreqMin, Math.Min(lo, start));
+        hi = Math.Min(PeqLimits.FreqMax, Math.Max(hi, start));
+        return PeqLimits.Clamp(moved, lo, Math.Max(hi, lo));
+    }
+
     private List<int> FrequencyOrder(IEnumerable<int> bands) =>
         bands.OrderBy(b => _shown[b].Frequency).ThenBy(b => b).ToList();
 
@@ -1246,7 +1261,7 @@ public sealed class PeqGraphEditor : IDisposable
             var role = Role(s);
             if (role.Kind == PeqNodeRole.RoleKind.Locked) continue;
             var p = s.Clone();
-            p.Frequency = (float)ClampToRange(s.Frequency * ratio);
+            p.Frequency = (float)ClampMoved(s.Frequency, s.Frequency * ratio);
             if (s.Type.HasGain())
             {
                 double gain = gainFactor is { } f ? s.Gain * f
@@ -1535,7 +1550,7 @@ public sealed class PeqGraphEditor : IDisposable
             if (key is PeqKey.Left or PeqKey.Right)
             {
                 double octaves = (fine ? 1.0 / 96 : 1.0 / 12) * (key == PeqKey.Right ? 1 : -1);
-                p.Frequency = (float)ClampToRange(p.Frequency * Math.Pow(2, octaves));
+                p.Frequency = (float)ClampMoved(p.Frequency, p.Frequency * Math.Pow(2, octaves));
             }
             else
             {
@@ -1631,7 +1646,7 @@ public sealed class PeqGraphEditor : IDisposable
         switch (field)
         {
             case PeqHudField.Freq:
-                q.Frequency = (float)ClampToRange(p.Frequency * Math.Pow(2, delta / 100));
+                q.Frequency = (float)ClampMoved(p.Frequency, p.Frequency * Math.Pow(2, delta / 100));
                 break;
             case PeqHudField.Gain:
                 if (!p.Type.HasGain()) return null;
