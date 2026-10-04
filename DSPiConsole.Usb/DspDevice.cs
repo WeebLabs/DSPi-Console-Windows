@@ -839,6 +839,27 @@ public partial class DspDevice : ObservableObject, IDisposable
     // it perpetually reconnecting and leaking scan threads.
     private int _scanActive;
 
+    // Set when a transfer finds the open handle dead (the device is gone, or
+    // keeps failing with I/O errors) while enumeration still lists it: a quick
+    // reseat into the same port, or a sleep/resume that cut USB power, gives
+    // the device back at the same bus address, so the scan would keep the stale
+    // handle forever with every transfer failing. The next scan drops it and
+    // reopens the device. Cleared by a successful open.
+    private volatile bool _deviceLost;
+    private int _consecutiveIoErrors;
+    private const int IoErrorsBeforeLost = 5;
+
+    /// <summary>Notes a failed transfer's error: the device gone at once, or
+    /// several I/O errors in a row. A STALL (unsupported request) or a timeout
+    /// is not a sign of a dead handle and doesn't count.</summary>
+    private void NoteTransferError(LibUsbDotNet.Error err)
+    {
+        if (err is LibUsbDotNet.Error.NoDevice or LibUsbDotNet.Error.NotFound)
+            _deviceLost = true;
+        else if (err == LibUsbDotNet.Error.Io && ++_consecutiveIoErrors >= IoErrorsBeforeLost)
+            _deviceLost = true;
+    }
+
     /// <summary>
     /// Scan for all connected DSPi devices, update the available list,
     /// and auto-select/reconnect as needed.
@@ -853,6 +874,14 @@ public partial class DspDevice : ObservableObject, IDisposable
 
         try
         {
+            // A handle found dead by a transfer: drop it so the code below sees no
+            // device open and reopens the selected one (see _deviceLost).
+            if (_deviceLost)
+            {
+                _deviceLost = false;
+                lock (_lock) { if (_device != null) HandleDisconnect(); }
+            }
+
             using var allDevicesList = _context.List();
             var matching = allDevicesList
                 .Where(d => d.VendorId == VendorId && d.ProductId == ProductId)
@@ -1057,6 +1086,8 @@ public partial class DspDevice : ObservableObject, IDisposable
                 _lastSelectedSerial = deviceInfo.Serial;
                 SelectedDeviceInfo = deviceInfo;
 
+                _deviceLost = false;
+                _consecutiveIoErrors = 0;
                 IsConnected = true;
                 ErrorMessage = null;
 
@@ -1247,7 +1278,14 @@ public partial class DspDevice : ObservableObject, IDisposable
             try
             {
                 int transferred = _device.ControlTransfer(setupPacket, buffer, 0, buffer.Length);
-                return transferred >= 0;
+                if (transferred < 0) { NoteTransferError((LibUsbDotNet.Error)transferred); return false; }
+                _consecutiveIoErrors = 0;
+                return true;
+            }
+            catch (UsbException ex)
+            {
+                NoteTransferError(ex.ErrorCode);
+                return false;
             }
             catch
             {
@@ -1283,12 +1321,19 @@ public partial class DspDevice : ObservableObject, IDisposable
             {
                 transferred = _device.ControlTransfer(setupPacket, buffer, 0, buffer.Length);
             }
+            catch (UsbException ex)
+            {
+                NoteTransferError(ex.ErrorCode);
+                return null;
+            }
             catch
             {
                 // See ControlTransferOut for the rationale — keep USB stack
                 // exceptions from propagating through async void handlers.
                 return null;
             }
+            if (transferred < 0) NoteTransferError((LibUsbDotNet.Error)transferred);
+            else _consecutiveIoErrors = 0;
 
             if (transferred > 0)
             {
@@ -2415,7 +2460,10 @@ public partial class DspDevice : ObservableObject, IDisposable
             if (err == LibUsbDotNet.Error.Timeout || err == LibUsbDotNet.Error.Interrupted)
                 continue;
             if (err == LibUsbDotNet.Error.NoDevice || err == LibUsbDotNet.Error.NotFound)
+            {
+                _deviceLost = true;   // the next scan reopens it (see _deviceLost)
                 break;
+            }
             if (err != LibUsbDotNet.Error.Success || len <= 0)
                 continue;
 
