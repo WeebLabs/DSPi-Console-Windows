@@ -126,11 +126,43 @@ public sealed partial class ControlSurfacesPanel
     private bool GroupShown(int idx) => _groupDrafts[idx].IsConfigured || _groupAdded.Contains(idx);
     private bool MacroShown(int idx) => _macroDrafts[idx].IsConfigured || _macroAdded.Contains(idx);
 
-    private int FirstFreeGroup()
+    /// <summary>
+    /// A free group slot, preferring one nothing on the device still names.
+    /// Deleting a group only switches off the controls that used it; they keep
+    /// its slot as their target, and the firmware brings them back up when a
+    /// group is next applied to that slot, so a new group reusing it would
+    /// silently take them over. Falls back to a referenced slot only when no
+    /// other is free (<paramref name="referenced"/> then says so).
+    /// </summary>
+    private int FirstFreeGroup(out bool referenced)
     {
+        int fallback = -1;
         for (int i = 0; i < _vm.CsGroupMax; i++)
-            if (!GroupShown(i)) return i;
-        return -1;
+        {
+            if (GroupShown(i)) continue;
+            if (!GroupReferenced(i)) { referenced = false; return i; }
+            if (fallback < 0) fallback = i;
+        }
+        referenced = fallback >= 0;
+        return fallback;
+    }
+
+    private int FirstFreeGroup() => FirstFreeGroup(out _);
+
+    /// <summary>True when a stored binding, remote button, macro step or
+    /// display page still targets group slot <paramref name="idx"/>.</summary>
+    private bool GroupReferenced(int idx)
+    {
+        foreach (var b in _vm.CsBindings)
+            if (b.IsConfigured && b.IsGrouped && b.Target == idx) return true;
+        foreach (var c in _vm.CsIrCommands)
+            if (c.IsConfigured && c.IsGrouped && c.Target == idx) return true;
+        foreach (var m in _vm.CsMacros)
+            for (int st = 0; st < Math.Min(m.StepCount, m.Steps.Length); st++)
+                if (m.Steps[st].IsGrouped && m.Steps[st].Target == idx) return true;
+        foreach (var page in _vm.CsDisplayPages)
+            if (page.IsActive && page.IsGrouped && page.Target == idx) return true;
+        return false;
     }
 
     private int FirstFreeMacro()
@@ -409,8 +441,11 @@ public sealed partial class ControlSurfacesPanel
 
     private void OnAddGroupClick(object sender, RoutedEventArgs e)
     {
-        int idx = FirstFreeGroup();
+        int idx = FirstFreeGroup(out bool referenced);
         if (idx < 0) return;
+        if (referenced)
+            ShowToast("Every free group slot is still used by a control whose group was deleted. " +
+                      "Applying this group turns that control back on for its channels.");
         // Outputs are what a group is usually for (speaker sets), so start there
         // when the platform offers them.
         var kinds = GroupKindOptions().Select(k => k.kind).ToList();
