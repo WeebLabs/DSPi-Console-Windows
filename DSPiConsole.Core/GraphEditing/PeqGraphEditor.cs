@@ -138,6 +138,8 @@ public sealed class PeqGraphEditor : IDisposable
 
     private IPeqTimer? _hudHideTimer, _revealTimer, _deviceTimer, _commitTimer;
     private readonly HashSet<int> _deviceDirty = new();
+    // Bands sent to the device during the live edit in progress.
+    private readonly HashSet<int> _deviceSent = new();
     private int? _wheelBand;
     private double _wheelTime;
 
@@ -659,6 +661,7 @@ public sealed class PeqGraphEditor : IDisposable
             .Select(b => (b, _live[b].Clone()))
             .ToList();
         _deviceDirty.Clear();
+        foreach (var (b, _) in changes) _deviceSent.Add(b);
         _host.SendGraphBandsToDevice(ch, changes);
         _deviceTimer = _clock.Schedule(Tuning.DeviceInterval, () =>
         {
@@ -676,11 +679,16 @@ public sealed class PeqGraphEditor : IDisposable
         _commitTimer?.Cancel();
         _commitTimer = null;
         if (_config.Channel is { } endCh && _live.Count > 0) _host.EndLive(endCh);
+        // A band that ends where it started is still committed if the device was
+        // sent a value on the way (a jittery click, a drag out and back): the
+        // dropped throttled send above may have been the return trip, leaving
+        // the device on an intermediate value.
         var changes = _live.Keys.OrderBy(b => b)
-            .Where(b => b < _committed.Count && !_live[b].SameAs(_committed[b]))
+            .Where(b => b < _committed.Count && (!_live[b].SameAs(_committed[b]) || _deviceSent.Contains(b)))
             .Select(b => (b, _live[b].Clone()))
             .ToList();
         _live.Clear();
+        _deviceSent.Clear();
         if (changes.Count == 0 || _config.Channel is not { } ch) return;
         foreach (var (band, p) in changes) _committed[band] = p.Clone();
         _host.CommitGraphBands(ch, changes);

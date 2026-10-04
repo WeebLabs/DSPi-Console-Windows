@@ -1046,6 +1046,25 @@ public class PeqGraphEditorTests
         Near(12 * Math.Pow(2, 1.0 / 12), rig.Host.Latest()[0].Frequency, 0.01, "it can still move toward the axis");
     }
 
+    /// <summary>A drag out and back released before the throttled send of the
+    /// return trip still commits, so the device doesn't keep the value sent on
+    /// the way out.</summary>
+    [Fact]
+    public void DragBackToStartRestoresTheDevice()
+    {
+        var rig = MakeRig(With((2, Band(FilterType.Peaking, 1000, 1.5f, 3))));
+        var start = rig.At(1000, 3);
+        rig.View.PointerPressed(start, PeqMods.None, 1);
+        rig.View.PointerDragged(new PeqPoint(start.X + 40, start.Y - 20), PeqMods.None);
+        Assert.True(rig.Host.Sends > 0, "the device was sent the dragged value");
+        rig.View.PointerDragged(start, PeqMods.None);
+        rig.View.PointerReleased(start);
+        Assert.Single(rig.Host.Commits);
+        var back = rig.Host.Commits[0].Single(c => c.Band == 2).Params;
+        Near(1000, back.Frequency, 0.5);
+        Near(3, back.Gain, 0.01);
+    }
+
     [Fact]
     public void ArrowKeysNudgeAndCommitAfterAPause()
     {
