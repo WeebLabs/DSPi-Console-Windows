@@ -1088,7 +1088,25 @@ public partial class DspDevice : ObservableObject, IDisposable
     public void SelectDevice(DSPiDeviceInfo device)
     {
         if (device.Serial == _openDeviceSerial && IsConnected) return;
-        OpenDevice(device);
+        // Hold the scan guard for the switch. OpenDevice drops the old device
+        // first and takes tens of ms to probe the candidates; a timer scan in
+        // that window saw no device open and reopened the last selected one,
+        // the old one, undoing the switch (and its brief probe-opens could
+        // collide with ours). Called off the UI thread, so the wait is fine.
+        while (System.Threading.Interlocked.CompareExchange(ref _scanActive, 1, 0) != 0)
+        {
+            if (_disposed) return;
+            System.Threading.Thread.Sleep(10);
+        }
+        try
+        {
+            _lastSelectedSerial = device.Serial;
+            OpenDevice(device);
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _scanActive, 0);
+        }
     }
 
     /// <summary>
