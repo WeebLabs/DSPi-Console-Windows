@@ -153,6 +153,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
 
     private readonly HashSet<int> _expanded = new();
     private readonly HashSet<int> _irExpanded = new();
+    // Unlearned remote buttons that have a card (added, not yet learned or
+    // removed). Kept apart from _irExpanded: collapsing such a card must not
+    // free its sub, or the next Add reuses it and draws a second card.
+    private readonly HashSet<int> _irAdded = new();
 
     private bool _building;
     private int? _applyingSlot;
@@ -1278,7 +1282,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
         finally { _building = false; }
     }
 
-    private bool IrSubShown(int sub) => _irDrafts[sub].IsConfigured || _irExpanded.Contains(sub);
+    private bool IrSubShown(int sub) => _irDrafts[sub].IsConfigured || _irAdded.Contains(sub);
 
     private string IrCountText() => $"Remote Buttons ({ConfiguredIrCount()}/{_vm.CsIrMax})";
 
@@ -1955,6 +1959,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
             draft.Action = acts.Count > 0 ? (byte)acts[0] : (byte)0;
         }
         _irDrafts[sub] = draft;
+        _irAdded.Add(sub);
         _irExpanded.Add(sub);
         // Insert just the new remote-button card; siblings stay put.
         InsertIrCommandCard(sub);
@@ -1967,6 +1972,7 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     {
         bool wasLive = _vm.CsIrCommands[sub].IsConfigured;
         _irDrafts[sub] = new IrCommand();
+        _irAdded.Remove(sub);
         _irExpanded.Remove(sub);
         // Remove just this card; siblings stay put.
         RemoveIrCommandCard(sub);
@@ -2125,10 +2131,10 @@ public sealed partial class ControlSurfacesPanel : UserControl, IPinHighlightPag
     private int FirstFreeIrSub()
     {
         // A sub is taken once it's learned (IsConfigured) OR while an unlearned draft
-        // is still being edited (expanded) — otherwise a second Add would reuse and
+        // has a card, expanded or not — otherwise a second Add would reuse and
         // overwrite the first not-yet-learned button's sub.
         for (int i = 0; i < _vm.CsIrMax; i++)
-            if (!_irDrafts[i].IsConfigured && !_irExpanded.Contains(i)) return i;
+            if (!IrSubShown(i)) return i;
         return -1;
     }
 
