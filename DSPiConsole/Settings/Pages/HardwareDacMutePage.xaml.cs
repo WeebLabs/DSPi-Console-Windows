@@ -30,6 +30,12 @@ public sealed partial class HardwareDacMutePage : SettingsModule, ISettingsPage
 
     private const string ConfigKey = "hardware.dac-mute.config";
 
+    // The config last staged from this page. While its entry is still pending,
+    // the page shows it rather than the device's: navigating away and back
+    // used to reset the controls to the device values, and the next edit then
+    // restaged the whole config from them, silently dropping the pending one.
+    private DacHwMuteConfig? _staged;
+
     public HardwareDacMutePage()
     {
         InitializeComponent();
@@ -98,7 +104,8 @@ public sealed partial class HardwareDacMutePage : SettingsModule, ISettingsPage
     {
         if (Vm == null) return;
 
-        var cfg = Vm.DacHwMute;
+        bool pending = _staged != null && Tracker?.Pending.Any(p => p.Key == ConfigKey) == true;
+        var cfg = pending ? _staged! : Vm.DacHwMute;
         _suppress = true;
         try
         {
@@ -123,8 +130,10 @@ public sealed partial class HardwareDacMutePage : SettingsModule, ISettingsPage
         // configured, enabled or not, since a disabled mute still holds its
         // GPIO. Gating this on Enabled too left the map offering a click that
         // arrived here with nothing registered to ring.
+        // The device's pin, which is what the map shows, even while a change is pending.
         ClearPinTargets();
-        if (cfg.Pin != DacHwMuteConfig.PinNone) RegisterPinTarget(cfg.Pin, PinCombo);
+        byte mapPin = Vm.DacHwMute.Pin;
+        if (mapPin != DacHwMuteConfig.PinNone) RegisterPinTarget(mapPin, PinCombo);
     }
 
     private void SelectPinInCombo(byte pin)
@@ -252,6 +261,7 @@ public sealed partial class HardwareDacMutePage : SettingsModule, ISettingsPage
             holdMs: SelectedMs(HoldCombo, current.HoldMs),
             releaseMs: SelectedMs(ReleaseCombo, current.ReleaseMs));
 
+        _staged = pending;
         var vm = Vm;
         Tracker.Stage(new PendingChange(
             Key: ConfigKey,
