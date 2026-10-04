@@ -1614,6 +1614,7 @@ public sealed partial class MainWindow : Window
             gainValuePanel.Children.Add(new TextBlock { Text = "dB", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Foreground = unitBrush });
             gainValuePanel.PointerWheelChanged += (s, ev) =>
             {
+                if (!gainSlider.IsEnabled) return;   // locked
                 var delta = ev.GetCurrentPoint(gainValuePanel).Properties.MouseWheelDelta;
                 if (delta == 0) return;
                 int direction = delta > 0 ? 1 : -1;
@@ -1782,6 +1783,7 @@ public sealed partial class MainWindow : Window
             delayValuePanel.Children.Add(delayUnitText);
             delayValuePanel.PointerWheelChanged += (s, ev) =>
             {
+                if (!delaySlider.IsEnabled) return;   // locked
                 var delta = ev.GetCurrentPoint(delayValuePanel).Properties.MouseWheelDelta;
                 if (delta == 0) return;
                 int direction = delta > 0 ? 1 : -1;
