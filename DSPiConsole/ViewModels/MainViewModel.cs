@@ -507,6 +507,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 FetchOutputEnable(i);
             FetchOutputEnable(PdmOutputIndex);
         });
+        // Output enables are part of the preset; the fetches above update them
+        // without the setters' dirty check.
+        CheckDirty();
     }
 
     public async Task SwitchFromPdmAsync(int enabling)
@@ -518,6 +521,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             FetchOutputEnable(PdmOutputIndex);
             FetchOutputEnable(enabling);
         });
+        CheckDirty();
     }
 
     public IReadOnlyDictionary<int, ObservableCollection<FilterParams>> ChannelData => _channelData;
