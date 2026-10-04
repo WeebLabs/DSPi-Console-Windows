@@ -5849,7 +5849,9 @@ public sealed partial class MainWindow : Window
 
             if (dialog.SelectedChannelIds.Count > 0)
             {
-                await ShowSuccessDialog($"Filters imported to {dialog.SelectedChannelIds.Count} channel(s)");
+                var summary = $"Filters imported to {dialog.SelectedChannelIds.Count} channel(s)";
+                summary += TruncationNote(dialog.SelectedChannelIds.Select(id => (id, (List<FilterParams>?)filters)));
+                await ShowSuccessDialog(summary);
             }
         }
     }
@@ -5913,7 +5915,29 @@ public sealed partial class MainWindow : Window
         var summary = $"Filters imported to {applied} channel(s)";
         if (unavailable.Count > 0)
             summary += $"\n\nNot imported (not available on this device): {skipped}";
+        summary += TruncationNote(dialog.SelectedChannelIds.Select(id =>
+            (id, channelFilters.TryGetValue(id, out var f) ? f : null)));
         await ShowSuccessDialog(summary);
+    }
+
+    /// <summary>
+    /// A note for the import result naming each channel that got fewer bands
+    /// than the file has (a REW auto-EQ can write 20), or "" when all fit. Only
+    /// the first bands, in file order, are applied.
+    /// </summary>
+    private string TruncationNote(IEnumerable<(int ChannelId, List<FilterParams>? Filters)> applied)
+    {
+        var cut = new List<string>();
+        foreach (var (id, filters) in applied)
+        {
+            var channel = Channel.All.FirstOrDefault(c => (int)c.Id == id);
+            if (channel == null || filters == null || filters.Count <= channel.BandCount) continue;
+            cut.Add($"{ViewModel.GetChannelName(channel)} ({channel.BandCount} of {filters.Count})");
+        }
+        return cut.Count == 0
+            ? ""
+            : "\n\nThe file has more filters than these channels have bands, so only the first " +
+              $"ones were imported: {string.Join(", ", cut)}.";
     }
 
     private async Task<bool> ApplyFiltersToChannel(
