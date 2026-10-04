@@ -9,8 +9,9 @@ namespace DSPiConsole.Controls;
 
 /// <summary>
 /// A compact typed number with its unit, after the macOS Console's ValueField:
-/// Enter or leaving the field commits, Escape reverts, the scroll wheel steps,
-/// and the value is clamped to its range. Commits only text the user changed,
+/// Enter or leaving the field commits, Escape reverts, Ctrl+wheel steps (a
+/// plain wheel scrolls the page, as in the app's other value fields), and the
+/// value is clamped to its range. Commits only text the user changed,
 /// so a value set from outside while the field has focus is not undone.
 /// </summary>
 public sealed class ValueField : UserControl
@@ -47,8 +48,10 @@ public sealed class ValueField : UserControl
         _box.LostFocus += (_, _) => CommitText();
         _box.PointerWheelChanged += (_, e) =>
         {
-            e.Handled = true;
+            if (!e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || !IsEnabled) return;
             int delta = e.GetCurrentPoint(_box).Properties.MouseWheelDelta;
+            if (delta == 0) return;
+            e.Handled = true;
             Set(_value + (delta > 0 ? _step : -_step));
         };
         IsEnabledChanged += (_, _) => _box.IsEnabled = IsEnabled;
