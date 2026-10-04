@@ -4220,6 +4220,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _pollTimer.Stop();
         _pollTimer.Dispose();
+
+        // Deliver queued writes, then turn off the subharmonic solo: it is
+        // runtime-only state its window clears on close, but on quit that
+        // window closes after the device is gone, and solo would outlive the app.
+        Task queued;
+        lock (_deviceQueueLock) queued = _deviceQueue;
+        try { queued.Wait(500); } catch { }
+        if (SubharmSolo && _device.IsConnected)
+            try { _device.SetSubharmSolo(false); } catch { }
+
         _device.Dispose();
 
         GC.SuppressFinalize(this);
