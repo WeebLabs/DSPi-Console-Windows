@@ -41,7 +41,7 @@ public sealed class VolumeLevellerWindow : Window
     public VolumeLevellerWindow(MainViewModel viewModel)
     {
         _vm = viewModel;
-        ToolWindowChrome.Apply(this, "Volume Leveller", 380, 560);
+        ToolWindowChrome.Apply(this, "Volume Leveller", 380, 560, fitContent: true);
         _speedDescription.Foreground = _secondary;
 
         _amount = new ParameterRow("Amount", "%", 0, 100, set: v => _vm.LevellerAmount = Math.Clamp(v, 0, 100),

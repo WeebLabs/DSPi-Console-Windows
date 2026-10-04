@@ -46,7 +46,7 @@ public sealed class UpmixerWindow : Window
     public UpmixerWindow(MainViewModel viewModel)
     {
         _vm = viewModel;
-        ToolWindowChrome.Apply(this, "Stereo Upmixer", 400, 720);
+        ToolWindowChrome.Apply(this, "Stereo Upmixer", 400, 720, fitContent: true);
 
         var accent = (Color)Application.Current.Resources["SystemAccentColor"];
         _corr = new Gauge("Correlation", accent, _secondary);

@@ -45,7 +45,7 @@ public sealed class PsychoacousticBassWindow : Window
     public PsychoacousticBassWindow(MainViewModel viewModel)
     {
         _vm = viewModel;
-        ToolWindowChrome.Apply(this, "Psychoacoustic Bass", 780, 520);
+        ToolWindowChrome.Apply(this, "Psychoacoustic Bass", 780, 520, fitContent: true);
 
         _cutoff = Row("Cutoff Frequency", "Hz", PsybassLimits.CutoffMinHz, PsybassLimits.CutoffMaxHz, MainViewModel.PsybassField.Cutoff,
             v => _vm.PsybassCutoffHz = v, 1, 0,

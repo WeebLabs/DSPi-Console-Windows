@@ -66,7 +66,7 @@ public sealed class TubeModellerWindow : Window
     public TubeModellerWindow(MainViewModel vm)
     {
         _vm = vm;
-        ToolWindowChrome.Apply(this, "Tube Modeller", 900, 700);
+        ToolWindowChrome.Apply(this, "Tube Modeller", 900, 700, fitContent: true);
         _icon = new TubeIcon(27, new SolidColorBrush(Accent)) { VerticalAlignment = VerticalAlignment.Center };
 
         var root = new Grid { Background = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"] };

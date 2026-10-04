@@ -63,7 +63,7 @@ public sealed class SubharmonicSynthWindow : Window
     public SubharmonicSynthWindow(MainViewModel vm)
     {
         _vm = vm;
-        ToolWindowChrome.Apply(this, "Subharmonic Synthesizer", 900, 660);
+        ToolWindowChrome.Apply(this, "Subharmonic Synthesizer", 900, 660, fitContent: true);
 
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

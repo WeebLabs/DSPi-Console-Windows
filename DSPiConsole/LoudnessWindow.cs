@@ -42,7 +42,7 @@ public sealed class LoudnessWindow : Window
     public LoudnessWindow(MainViewModel viewModel)
     {
         _vm = viewModel;
-        ToolWindowChrome.Apply(this, "Loudness Compensation", 780, 440);
+        ToolWindowChrome.Apply(this, "Loudness Compensation", 780, 440, fitContent: true);
 
         _ref = new ParameterRow("Reference SPL", "dB", 40, 100, set: v => _vm.LoudnessRefSPL = v, live: v =>
         {

@@ -50,7 +50,7 @@ public sealed class CrossfeedWindow : Window
     public CrossfeedWindow(MainViewModel viewModel)
     {
         _vm = viewModel;
-        ToolWindowChrome.Apply(this, "Crossfeed", 780, 500);
+        ToolWindowChrome.Apply(this, "Crossfeed", 780, 500, fitContent: true);
 
         _freq = new ParameterRow("Cutoff Frequency", "Hz", CrossfeedData.FreqMin, CrossfeedData.FreqMax,
             set: v => Commit(freq: v), live: v => Live(freq: true, v))
