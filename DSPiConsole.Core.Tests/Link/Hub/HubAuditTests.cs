@@ -65,6 +65,38 @@ public sealed class HubAuditTests : IDisposable
         Assert.Null(CloseCode(output, 300));
     }
 
+    [Theory]
+    [InlineData(LinkRole.Viewer)]
+    [InlineData(LinkRole.Control)]
+    public void APairedSessionGetsItsRoleBackWhenPairingReturns(LinkRole role)
+    {
+        _auth.AuthMode = LinkAuthMode.Pin;
+        var paired = _auth.Pair(_auth.BeginPairing(), "Phone", role, "192.168.1.50");
+        var cid = paired.Client!.Cid;
+        var session = _hub.OpenSession(paired.Client.Role, clientId: cid);
+        Assert.Equal(role, session.Role);
+
+        _auth.AuthMode = LinkAuthMode.None;
+        Assert.Equal(LinkRole.Admin, session.Role);
+        _auth.AuthMode = LinkAuthMode.Pin;
+        Assert.Equal(role, session.Role);
+    }
+
+    [Fact]
+    public void ARoleChangedWhileOpenAppliesWhenPairingReturns()
+    {
+        _auth.AuthMode = LinkAuthMode.Pin;
+        var paired = _auth.Pair(_auth.BeginPairing(), "Phone", LinkRole.Admin, "192.168.1.50");
+        var cid = paired.Client!.Cid;
+        var session = _hub.OpenSession(paired.Client.Role, clientId: cid);
+
+        _auth.AuthMode = LinkAuthMode.None;
+        _auth.SetRole(cid, LinkRole.Viewer);
+        Assert.Equal(LinkRole.Admin, session.Role);   // open access: still an admin
+        _auth.AuthMode = LinkAuthMode.Pin;
+        Assert.Equal(LinkRole.Viewer, session.Role);
+    }
+
     [Fact]
     public void AViewerGivesUpItsLock()
     {

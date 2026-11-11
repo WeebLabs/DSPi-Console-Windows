@@ -266,7 +266,9 @@ public sealed class LinkSessionHandler : ILinkConnection
                 if (reply is { } rid) Send(new LinkErr(LinkErrorCode.Unauthenticated, rid));
                 return;
             }
-            session.Role = role = current.Role;
+            // Under open access every session is an admin (spec 6.1), even
+            // one that presented its token.
+            session.Role = role = _hub.Auth.AuthMode == LinkAuthMode.None ? LinkRole.Admin : current.Role;
         }
         LinkLog.Write($"hub: session {session.Id} ({role}) for {_peer}");
         if (reply is { } id)

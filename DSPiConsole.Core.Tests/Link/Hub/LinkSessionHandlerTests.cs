@@ -164,6 +164,21 @@ public sealed class LinkSessionHandlerTests : IDisposable
     }
 
     [Fact]
+    public void ATokenUnderOpenAccessGivesAnAdminSession()
+    {
+        _auth.AuthMode = LinkAuthMode.Pin;
+        var pin = _auth.BeginPairing();
+        var c = Hello();
+        c.Send(new LinkAuthPair(1, pin, "Phone", LinkRole.Viewer));
+        var token = c.NextMessage<LinkOk>().DecodeBody<LinkAuthOkBody>().Token!;
+
+        _auth.AuthMode = LinkAuthMode.None;
+        var again = Hello("192.168.1.51");
+        again.Send(new LinkAuthToken(2, token));
+        Assert.Equal(LinkRole.Admin, again.NextMessage<LinkOk>().DecodeBody<LinkAuthOkBody>().Role);
+    }
+
+    [Fact]
     public void AWrongTokenIsUnauthenticatedAndTheLimitCloses4001()
     {
         _auth.AuthMode = LinkAuthMode.Pin;

@@ -475,9 +475,12 @@ public sealed class LinkHub : IDisposable
 
     /// <summary>A role change applies from the next command. A session made a
     /// viewer gives up any lock it holds: it can't write, so its lock would
-    /// only keep everyone else out.</summary>
+    /// only keep everyone else out. Under open access every session stays an
+    /// admin (spec 6.1); the stored role takes effect when pairing is turned
+    /// back on.</summary>
     public void SetRole(int clientId, LinkRole role)
     {
+        if (Auth.AuthMode == LinkAuthMode.None) return;
         List<ushort> affected;
         lock (_sessionLock)
         {
@@ -492,7 +495,9 @@ public sealed class LinkHub : IDisposable
     /// Require Pairing turned on: the sessions that came in under open access
     /// (no paired client behind them) are closed with 4002, so they pair to
     /// come back; otherwise a stranger let in while it was open would stay an
-    /// admin. Turned off: every session is an admin again (spec 6.1).
+    /// admin. A paired session goes back to its client's stored role, which
+    /// open access had raised to admin. Turned off: every session is an admin
+    /// again (spec 6.1).
     /// </summary>
     private void AuthModeChanged(LinkAuthMode mode)
     {
@@ -503,8 +508,15 @@ public sealed class LinkHub : IDisposable
             foreach (var s in sessions) s.Role = LinkRole.Admin;
             return;
         }
-        foreach (var s in sessions.Where(s => s.ClientId == null))
+        foreach (var s in sessions)
         {
+            if (s.ClientId is { } cid && Auth.Client(cid) is { } client)
+            {
+                s.Role = client.Role;
+                if (client.Role == LinkRole.Viewer) ReleaseLock(s.Id);
+                continue;
+            }
+            // Let in while open, or its client forgotten since.
             var tell = s.OnClosedByHub;   // CloseSession clears it
             CloseSession(s.Id);
             tell?.Invoke();
