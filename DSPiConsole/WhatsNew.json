@@ -1,5 +1,26 @@
 [
   {
+    "version": "1.1.6",
+    "headline": "Share your DSPi on the network, and Console now updates itself",
+    "items": [
+      "DSPi Link shares the DSPi plugged into this PC with phones, browsers and other Consoles on your local network. Switch it on under Settings > General > Networking. Leave access Open, or require each new client to pair with a six-digit code and choose whether it can only watch, change the sound, or administer the hub.",
+      "A browser on the same network can open this PC's address to reach a control page that Console serves itself.",
+      "Console finds DSPi devices shared by other computers and ESP32 bridges, and lists them in the device list marked with the hub they are on. Hubs can also be added by address.",
+      "Console can keep running in the notification area as a sharing hub, and can open at login. Turn this on under Settings > General > Background, or choose Minimise to Notification Area from the main menu.",
+      "Console checks for new releases and can download, verify and install them in place. Find it under Settings > Software Update, or choose Check for Updates from the Help menu.",
+      "When several Consoles watch one device's spectrum analyser, the last one to choose channels drives and the others follow it, with a Take control button, instead of overwriting each other.",
+      "Saving a preset, importing a configuration or learning an IR code holds other Consoles off the device until it finishes. A change refused that way says another console is applying changes.",
+      "Settings > General > Globals has a Latency setting. Pick a target from 0.67 ms to 8 ms. The 0.67 and 1 ms options suit S/PDIF, I2S and ADAT inputs, and run as 2 ms on USB.",
+      "Stats has an Output Ring Health section showing the fill target, underruns, the lowest fill and the worst input gaps, so you can tell whether a latency setting holds up. Buffer fill is shown in fine steps.",
+      "Give the board its own name under Settings > General > Globals, and rename its input sources there or by right-clicking the source picker. The device list and DSPi Link hubs show the names.",
+      "Control Surfaces can save the active preset and set the target latency. The Input & Presets family is now called Device, and display pages choose their parameter from a menu grouped by family.",
+      "Filter files now use the same format as DSPi Console for macOS, and importing one reports any filters it could not apply. The AutoEQ database can be rebuilt from GitHub.",
+      "The sidebar can be resized by dragging its edge, and a double-click puts it back. I2S data pins on unused pairs are listed under Unused pairs, and external mute offers hold and release times.",
+      "File > Exit now asks about unsaved changes and pending Settings, and won't quit during a firmware update, just as closing the window always did.",
+      "With firmware 1.1.6, level meters and clip indicators on the RP2040 no longer read 6 dB hot, a bypassed EQ band no longer stays bypassed after a factory reset, and outputs on a mixed S/PDIF and I2S layout no longer fall silent after playback pauses. Slave mode also tracks an S/PDIF, ADAT or I2S source more closely."
+    ]
+  },
+  {
     "version": "1.1.6-beta4",
     "headline": "Tube modelling, output limiters, a spectrum analyser and filters you shape on the graph",
     "items": [
