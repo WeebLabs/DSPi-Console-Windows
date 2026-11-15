@@ -68,7 +68,7 @@ internal sealed partial class NetworkingPanel : UserControl
         root.Children.Add(add);
         root.Children.Add(new TextBlock
         {
-            Text = "Devices on other hubs appear in the device list at the bottom of the main window. A hub that asks for a PIN is paired the first time you choose one of its devices.",
+            Text = "Devices on other hubs appear in the device list at the bottom of the main window. A hub that asks for a PIN is paired the first time you choose one of its devices, or with its Pair button here.",
             Foreground = secondary,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
@@ -77,13 +77,21 @@ internal sealed partial class NetworkingPanel : UserControl
         Content = root;
 
         EventHandler<IReadOnlyList<LinkHubRecord>> onHubs = (_, _) => DispatcherQueue.TryEnqueue(Render);
+        // A pairing finishing lists the hub's devices: drop its Pair button.
+        EventHandler onDevices = (_, _) => DispatcherQueue.TryEnqueue(Render);
         Loaded += (_, _) =>
         {
             _link.Browser.HubsChanged -= onHubs;
             _link.Browser.HubsChanged += onHubs;
+            _link.Transport.AvailableDevicesChanged -= onDevices;
+            _link.Transport.AvailableDevicesChanged += onDevices;
             Render();
         };
-        Unloaded += (_, _) => _link.Browser.HubsChanged -= onHubs;
+        Unloaded += (_, _) =>
+        {
+            _link.Browser.HubsChanged -= onHubs;
+            _link.Transport.AvailableDevicesChanged -= onDevices;
+        };
     }
 
     private void Render()
@@ -109,7 +117,9 @@ internal sealed partial class NetworkingPanel : UserControl
 
     private SettingsCard HubCard(LinkHubRecord hub)
     {
-        var devices = hub.DeviceCount == 1 ? "1 device" : $"{hub.DeviceCount} devices";
+        // A connected hub's session knows better than its last announcement.
+        int count = Math.Max(hub.DeviceCount, _link.Transport.AvailableDevices.Count(d => string.Equals(d.HubId, hub.Id, StringComparison.OrdinalIgnoreCase)));
+        var devices = count == 1 ? "1 device" : $"{count} devices";
         var badge = new Border
         {
             CornerRadius = new CornerRadius(4),
@@ -125,6 +135,15 @@ internal sealed partial class NetworkingPanel : UserControl
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         right.Children.Add(badge);
+        // Not paired yet: pair here rather than through one of its devices,
+        // which the device list can only show once the hub has named it.
+        if (hub.Auth == LinkAuthMode.Pin && _link.Tokens.Token(hub.Id) == null)
+        {
+            var pair = new Button { Content = "Pair..." };
+            ToolTipService.SetToolTip(pair, "Enter this hub's PIN, so its devices appear in the device list.");
+            pair.Click += (_, _) => _link.Transport.OpenHub(hub);
+            right.Children.Add(pair);
+        }
         // Typed in (whether or not discovery found it too): removable.
         var typed = (AppSettings.Instance.LinkManualHubs ?? new()).Where(a =>
             string.Equals(_link.Browser.AnsweredId(a), hub.Id, StringComparison.OrdinalIgnoreCase)).ToList();

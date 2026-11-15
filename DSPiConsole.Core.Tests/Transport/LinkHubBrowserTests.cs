@@ -140,21 +140,127 @@ public class LinkHubBrowserTests
     }
 
     [Fact]
-    public async Task ReannouncementsReresolveAtMostSoOften()
+    public async Task ReannouncementsInsideTheIntervalShareOneLaterResolve()
+    {
+        var dns = new FakeDns();
+        dns.Services["Mac._dspi._tcp.local"] = Service("Mac._dspi._tcp.local", MacHid);
+        using var browser = new LinkHubBrowser(dns) { Enabled = true, ReresolveInterval = TimeSpan.FromMilliseconds(300) };
+        dns.Announce("Mac._dspi._tcp.local");
+        await Until(() => browser.Hubs.Count == 1);
+        dns.Announce("Mac._dspi._tcp.local");
+        dns.Announce("Mac._dspi._tcp.local");
+        dns.Announce("Mac._dspi._tcp.local");
+        Assert.Equal(1, dns.Resolves);
+        // Put off, not dropped: one more resolve at the end of the interval.
+        await Until(() => Volatile.Read(ref dns.Resolves) == 2);
+        await Task.Delay(400);
+        Assert.Equal(2, dns.Resolves);
+    }
+
+    /// <summary>A bridge advertises n=0 as it starts and its device a moment
+    /// later (bridge hub_task.c). The second record came inside the
+    /// re-resolve interval and was dropped, so the device never appeared.</summary>
+    [Fact]
+    public async Task ABridgeThatNamesItsDeviceJustAfterStartingIsListedWithIt()
+    {
+        const string bridge = "DSPi Bridge 3F2A._dspi._tcp.local";
+        static DnsSdService Bridge(string? serial)
+        {
+            var txt = new Dictionary<string, string> { ["v"] = "1", ["hid"] = MacHid, ["kind"] = "bridge", ["auth"] = "pin", ["n"] = serial == null ? "0" : "1", ["web"] = "1" };
+            if (serial != null) txt["d"] = serial;
+            return new DnsSdService(bridge, "dspi-bridge-3f2a.local.", 11915, txt, [], 12);
+        }
+        var dns = new FakeDns();
+        dns.Services[bridge] = Bridge(null);
+        using var browser = new LinkHubBrowser(dns, (_, _) => Task.FromResult<LinkInfo?>(null)) { Enabled = true, ReresolveInterval = TimeSpan.FromMilliseconds(500) };
+        dns.Announce(bridge);
+        await Until(() => browser.Hubs.Count == 1);
+        Assert.Empty(browser.Hubs[0].Serials);
+
+        await Task.Delay(100);
+        lock (dns.Services) dns.Services[bridge] = Bridge("E46058388B1A2E2C");
+        dns.Announce(bridge);    // the device's announcements, all inside the interval
+        await Task.Delay(100);
+        dns.Announce(bridge);
+        await Until(() => browser.Hubs[0].Serials.Count == 1);
+        Assert.Equal(["E46058388B1A2E2C"], browser.Hubs[0].Serials);
+        Assert.Equal(1, browser.Hubs[0].DeviceCount);
+    }
+
+    [Fact]
+    public async Task AnAnnouncementBookedForLaterIsDroppedAfterTheGoodbye()
     {
         var dns = new FakeDns();
         dns.Services["Mac._dspi._tcp.local"] = Service("Mac._dspi._tcp.local", MacHid);
         using var browser = new LinkHubBrowser(dns) { Enabled = true, ReresolveInterval = TimeSpan.FromMilliseconds(200) };
         dns.Announce("Mac._dspi._tcp.local");
+        await Until(() => browser.Hubs.Count == 1);
+        dns.Announce("Mac._dspi._tcp.local");
+        dns.Goodbye("Mac._dspi._tcp.local");
+        await Task.Delay(400);
+        Assert.Equal(1, dns.Resolves);
+        Assert.Empty(browser.Hubs);
+    }
+
+    // ── Hubs that list no devices ──
+
+    private static LinkInfo BridgeInfo(string hid, params string[] serials) =>
+        new(new LinkProtoVersion(), new LinkHubInfo(hid, "DSPi Bridge 3F2A", LinkHubKind.Bridge, "1.0.0"), LinkAuthMode.Pin, "/dspi/v1",
+            false, serials.Select(s => new LinkInfoDevice(s, "Living room")).ToArray());
+
+    [Fact]
+    public async Task AHubListingNoDevicesIsAskedForThemOnItsInfoPage()
+    {
+        var dns = new FakeDns();
+        dns.Services["Bridge._dspi._tcp.local"] = Service("Bridge._dspi._tcp.local", MacHid, "pin");
+        var probes = 0;
+        using var browser = new LinkHubBrowser(dns, (e, _) =>
+        {
+            Interlocked.Increment(ref probes);
+            Assert.Equal("Studio-Mac.local", e.Host);
+            return Task.FromResult<LinkInfo?>(BridgeInfo(MacHid, "E46058388B1A2E2C"));
+        }) { EmptyHubRefreshInterval = TimeSpan.FromMilliseconds(100), Enabled = true };
+        dns.Announce("Bridge._dspi._tcp.local");
+        await Until(() => browser.Hubs.Count == 1 && browser.Hubs[0].Serials.Count == 1);
+        Assert.Equal(["E46058388B1A2E2C"], browser.Hubs[0].Serials);
+        Assert.Equal(1, browser.Hubs[0].DeviceCount);
+        // Listing a device now, it isn't asked again.
+        var asked = Volatile.Read(ref probes);
+        await Task.Delay(350);
+        Assert.Equal(asked, Volatile.Read(ref probes));
+    }
+
+    [Fact]
+    public async Task AnInfoPageFromAnotherHubIsIgnored()
+    {
+        var dns = new FakeDns();
+        dns.Services["Bridge._dspi._tcp.local"] = Service("Bridge._dspi._tcp.local", MacHid, "pin");
+        var probes = 0;
+        using var browser = new LinkHubBrowser(dns, (_, _) =>
+        {
+            Interlocked.Increment(ref probes);
+            return Task.FromResult<LinkInfo?>(BridgeInfo(OwnHid, "E46058388B1A2E2C"));
+        }) { EmptyHubRefreshInterval = TimeSpan.FromMilliseconds(50), Enabled = true };
+        dns.Announce("Bridge._dspi._tcp.local");
+        await Until(() => Volatile.Read(ref probes) >= 2);
+        Assert.Empty(browser.Hubs[0].Serials);
+    }
+
+    [Fact]
+    public async Task AHubThatListsADeviceIsNotProbed()
+    {
+        var dns = new FakeDns();
+        dns.Services["Mac._dspi._tcp.local"] = Service("Mac._dspi._tcp.local", MacHid, d: "E46058388B1A2E2C");
+        var probes = 0;
+        using var browser = new LinkHubBrowser(dns, (_, _) =>
+        {
+            Interlocked.Increment(ref probes);
+            return Task.FromResult<LinkInfo?>(null);
+        }) { EmptyHubRefreshInterval = TimeSpan.FromMilliseconds(50), Enabled = true };
         dns.Announce("Mac._dspi._tcp.local");
         await Until(() => browser.Hubs.Count == 1);
-        Assert.Equal(1, dns.Resolves);
         await Task.Delay(250);
-        // The TXT changed (a device was plugged in): the next announcement shows it.
-        lock (dns.Services) dns.Services["Mac._dspi._tcp.local"] = Service("Mac._dspi._tcp.local", MacHid, d: "E46058388B1A2E2C");
-        dns.Announce("Mac._dspi._tcp.local");
-        await Until(() => browser.Hubs.Count == 1 && browser.Hubs[0].Serials.Count == 1);
-        Assert.Equal(2, dns.Resolves);
+        Assert.Equal(0, Volatile.Read(ref probes));
     }
 
     [Fact]
@@ -231,6 +337,23 @@ public class LinkHubBrowserTests
         Assert.Equal(12000, hub.Endpoint.Port);
         Assert.Equal(IPAddress.Parse("192.168.1.20"), hub.Endpoint.Address);
         lock (asked) Assert.Equal("192.168.1.20", asked[0].Host);
+    }
+
+    [Fact]
+    public async Task ATypedHubWithNoDevicesIsAskedAgain()
+    {
+        var serials = Array.Empty<string>();
+        var changes = 0;
+        using var browser = new LinkHubBrowser(new FakeDns(), (_, _) => Task.FromResult<LinkInfo?>(BridgeInfo(MacHid, Volatile.Read(ref serials))))
+            { ManualRetryInterval = TimeSpan.FromMilliseconds(50) };
+        browser.HubsChanged += (_, _) => Interlocked.Increment(ref changes);
+        browser.SetManual(["192.168.1.40"]);
+        await Until(() => browser.Hubs.Count == 1);
+        await Task.Delay(200);
+        // The same empty answer again and again is not a change.
+        Assert.Equal(1, Volatile.Read(ref changes));
+        Volatile.Write(ref serials, ["E46058388B1A2E2C"]);
+        await Until(() => browser.Hubs[0].Serials.Count == 1);
     }
 
     [Fact]

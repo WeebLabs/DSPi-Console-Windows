@@ -416,6 +416,20 @@ public sealed class CompositeTransport : IDspTransport
         Attach(transport);
     }
 
+    /// <summary>
+    /// Opens a session to a hub without choosing one of its devices (the Pair
+    /// button in Settings › Networking): a hub that asks for a PIN asks now,
+    /// and once paired its devices are listed from the session rather than
+    /// from its announcement. The device being driven doesn't change.
+    /// </summary>
+    public void OpenHub(LinkHubRecord hub)
+    {
+        NetworkTransport? existing;
+        lock (_lock) _remotes.TryGetValue(hub.Id, out existing);
+        if (existing == null) RemoteFor(hub);
+        else if (existing.IsSessionDown) existing.Connect(hub.Endpoint);
+    }
+
     public void Reconnect() => Active.Reconnect();
     public void Disconnect() => Active.Disconnect();
     public void MarkDisconnected() => Active.MarkDisconnected();

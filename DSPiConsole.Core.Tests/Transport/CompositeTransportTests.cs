@@ -166,6 +166,37 @@ public class CompositeTransportTests : IDisposable
         Assert.True(rig.Composite.IsRemoteActive);
     }
 
+    /// <summary>The Pair button: a PIN hub whose announcement lists nothing is
+    /// paired without choosing a device, and its devices then come from the
+    /// session. The device being driven doesn't change.</summary>
+    [Fact]
+    public async Task OpeningAPinHubPairsItAndListsItsDevices()
+    {
+        await using var rig = new Rig(_tokenPath);
+        rig.Local.List(LocalBoard);
+        rig.Local.Connect(LocalBoard);
+        var asked = 0;
+        rig.Composite.PairingPrompt = _ => { Interlocked.Increment(ref asked); return Task.FromResult<string?>("482913"); };
+        var empty = new LinkHubRecord(HubId, "DSPi Bridge 3F2A", LinkHubKind.Bridge, LinkAuthMode.Pin, 0, [], new LinkEndpoint("dspi-bridge-3f2a.local"));
+        rig.Composite.UpdateHubs([empty]);
+        Assert.DoesNotContain(rig.Composite.AvailableDevices, d => d.Kind == DeviceLinkKind.Remote);
+
+        rig.Composite.OpenHub(empty);
+        await rig.Hub.ExpectAsync<LinkHelloClient>();
+        await rig.Hub.SendAsync(FakeLinkHub.Hello(LinkAuthMode.Pin, LinkPinSource.Fixed));
+        var pair = await rig.Hub.ExpectAsync<LinkAuthPair>();
+        Assert.Equal("482913", pair.Pin);
+        await rig.Hub.SendAsync(LinkOk.WithBody(pair.Id, new LinkAuthOkBody(7, LinkRole.Admin, "tok")));
+        var list = await rig.Hub.ExpectAsync<LinkDeviceListRequest>();
+        await rig.Hub.SendAsync(LinkOk.WithBody(list.Id, new LinkDeviceListBody([FakeLinkHub.Board(0, RemoteSerial)])));
+
+        await Until(() => rig.Composite.AvailableDevices.Any(d => d.Serial == RemoteSerial && d.HubId == HubId));
+        Assert.Equal(1, Volatile.Read(ref asked));
+        Assert.Equal("tok", rig.Tokens.Token(HubId));
+        Assert.False(rig.Composite.IsRemoteActive);
+        Assert.Equal(LocalBoard.Serial, rig.Composite.SelectedDevice?.Serial);
+    }
+
     /// <summary>A user's remote choice stays when a board appears.</summary>
     [Fact]
     public async Task AChosenRemoteStaysWhenABoardAppears()

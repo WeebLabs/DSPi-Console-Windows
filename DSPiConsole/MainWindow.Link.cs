@@ -11,6 +11,9 @@ namespace DSPiConsole;
 /// </summary>
 public sealed partial class MainWindow
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
     private DispatcherTimer? _lockNoticeTimer;
     private readonly SemaphoreSlim _pairingPromptGate = new(1, 1);
 
@@ -71,6 +74,20 @@ public sealed partial class MainWindow
         if (BackgroundMode.Shared.IsMinimised) BackgroundMode.Shared.Restore();
         // Only one ContentDialog may be open; wait for another to close.
         if (!await WaitForNoDialogAsync(TimeSpan.FromMinutes(2))) return null;
+        // Paired from Settings (its Networking page's Pair button): ask there,
+        // not behind it in this window.
+        var root = Content.XamlRoot;
+        if (_settingsWindow is { } settings && settings.Content?.XamlRoot is { } settingsRoot
+            && GetForegroundWindow() == WinRT.Interop.WindowNative.GetWindowHandle(settings))
+        {
+            var until = DateTime.UtcNow.AddMinutes(2);
+            while (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(settingsRoot).Any(p => p.Child is ContentDialog))
+            {
+                if (DateTime.UtcNow >= until) return null;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+            root = settingsRoot;
+        }
 
         var fixedPin = request.PinSource == Core.Link.LinkPinSource.Fixed;
         var box = new TextBox
@@ -107,7 +124,7 @@ public sealed partial class MainWindow
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             IsPrimaryButtonEnabled = false,
-            XamlRoot = Content.XamlRoot,
+            XamlRoot = root,
         };
         box.TextChanged += (_, _) =>
         {

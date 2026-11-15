@@ -30,16 +30,28 @@ public sealed class LinkHubBrowser : IDisposable
     /// finishes after the goodbye mustn't bring the hub back.</summary>
     private readonly HashSet<string> _present = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _lastResolve = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Instances with a re-resolve booked for the end of the interval.</summary>
+    private readonly HashSet<string> _resolveBooked = new(StringComparer.OrdinalIgnoreCase);
     private bool _enabled;
     private bool _disposed;
     private Timer? _manualRetry;
+    private Timer? _emptyRefresh;
+    private int _refreshing;
 
     /// <summary>The first wait before a failed resolve is tried again (it
     /// doubles, to 30 s, while the hub is still announced).</summary>
     public TimeSpan ResolveRetryDelay { get; init; } = TimeSpan.FromSeconds(2);
 
-    /// <summary>Re-announcements re-resolve (a TXT change), at most this often.</summary>
+    /// <summary>Re-announcements re-resolve (a TXT change) at most this often.
+    /// One that comes sooner is put off to the end of the interval, never
+    /// dropped: a bridge advertises n=0 as it starts and its device a moment
+    /// later, and that second record must not be lost.</summary>
     public TimeSpan ReresolveInterval { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How often a hub that lists no devices is asked again through
+    /// its info page, in case an announcement went missing. Hubs that list a
+    /// device are left alone: a bridge has few sockets.</summary>
+    public TimeSpan EmptyHubRefreshInterval { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>This PC's own hub id, never listed.</summary>
     public string? OwnHubId { get; set; }
@@ -55,16 +67,7 @@ public sealed class LinkHubBrowser : IDisposable
     {
         _dns = dns;
         _probe = probe ?? ProbeInfoAsync;
-        _dns.Found += (_, instance) =>
-        {
-            lock (_lock)
-            {
-                _present.Add(instance);
-                if (_lastResolve.TryGetValue(instance, out var last) && DateTime.UtcNow - last < ReresolveInterval) return;
-                _lastResolve[instance] = DateTime.UtcNow;
-            }
-            _ = ResolveAsync(instance);
-        };
+        _dns.Found += (_, instance) => Announced(instance);
         _dns.Lost += (_, instance) =>
         {
             lock (_lock)
@@ -76,6 +79,43 @@ public sealed class LinkHubBrowser : IDisposable
             }
             Publish();
         };
+    }
+
+    /// <summary>An announcement: resolve now, or, inside the interval, once
+    /// at its end (several announcements in a row share that one).</summary>
+    private void Announced(string instance)
+    {
+        TimeSpan? wait = null;
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _present.Add(instance);
+            var now = DateTime.UtcNow;
+            if (_lastResolve.TryGetValue(instance, out var last) && now - last < ReresolveInterval)
+            {
+                if (!_resolveBooked.Add(instance)) return;
+                wait = last + ReresolveInterval - now;
+            }
+            else
+            {
+                _lastResolve[instance] = now;
+            }
+        }
+        if (wait == null)
+        {
+            _ = ResolveAsync(instance);
+            return;
+        }
+        _ = Task.Delay(wait.Value).ContinueWith(_ =>
+        {
+            lock (_lock)
+            {
+                _resolveBooked.Remove(instance);
+                if (!_enabled || _disposed || !_present.Contains(instance)) return;
+                _lastResolve[instance] = DateTime.UtcNow;
+            }
+            _ = ResolveAsync(instance);
+        }, TaskScheduler.Default);
     }
 
     public IReadOnlyList<LinkHubRecord> Hubs
@@ -116,6 +156,10 @@ public sealed class LinkHubBrowser : IDisposable
                     _present.Clear();
                     _lastResolve.Clear();
                 }
+                else
+                {
+                    _emptyRefresh ??= new Timer(_ => _ = RefreshEmptyHubsAsync(), null, EmptyHubRefreshInterval, EmptyHubRefreshInterval);
+                }
             }
             if (value) _dns.Start(LinkService.ServiceType);
             else _dns.Stop();
@@ -134,6 +178,9 @@ public sealed class LinkHubBrowser : IDisposable
         var txt = service != null ? LinkTxtRecord.TryParse(service.Txt) : null;
         if (service == null || txt == null)
         {
+            LinkLog.Write(service == null
+                ? $"hubs: {InstanceLabel(instance)} did not resolve (attempt {attempt + 1})"
+                : $"hubs: {InstanceLabel(instance)} has an unusable TXT record ({string.Join(" ", service.Txt.Select(p => $"{p.Key}={p.Value}"))}) (attempt {attempt + 1})");
             // A lost answer mustn't hide the hub until it says goodbye: try
             // again while it is still announced, backing off.
             bool again;
@@ -151,6 +198,50 @@ public sealed class LinkHubBrowser : IDisposable
             _discovered[instance] = Record(instance, service, txt);
         }
         Publish();
+    }
+
+    /// <summary>
+    /// Asks each discovered hub that lists no devices for its info page. A
+    /// device that arrived in an announcement Windows didn't pass on (or one
+    /// this browser missed) shows up here instead of staying hidden until the
+    /// hub changes again; for a hub that asks for a PIN, that device is the
+    /// only way to reach it. The next TXT record still wins.
+    /// </summary>
+    private async Task RefreshEmptyHubsAsync()
+    {
+        if (Interlocked.Exchange(ref _refreshing, 1) == 1) return;
+        try
+        {
+            List<(string Instance, LinkHubRecord Hub)> empty;
+            lock (_lock)
+            {
+                if (!_enabled || _disposed) return;
+                empty = _discovered.Where(p => p.Value.Serials.Count == 0).Select(p => (p.Key, p.Value)).ToList();
+            }
+            foreach (var (instance, hub) in empty)
+            {
+                LinkInfo? info;
+                using (var cts = new CancellationTokenSource(ResolveTimeout))
+                {
+                    try { info = await _probe(hub.Endpoint, cts.Token).ConfigureAwait(false); }
+                    catch (Exception) { continue; }
+                }
+                if (info?.Devices is not { Count: > 0 } devices
+                    || !string.Equals(info.Hub.Id, hub.Id, StringComparison.OrdinalIgnoreCase)) continue;
+                lock (_lock)
+                {
+                    // Gone, or a newer record already lists devices.
+                    if (!_discovered.TryGetValue(instance, out var current) || current.Serials.Count > 0) continue;
+                    _discovered[instance] = current with { DeviceCount = devices.Count, Serials = devices.Select(d => d.Serial).ToArray() };
+                }
+                LinkLog.Write($"hubs: {hub.Name} lists {devices.Count} device(s) on its info page; its announcement did not");
+                Publish();
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _refreshing, 0);
+        }
     }
 
     private LinkHubRecord Record(string instance, DnsSdService service, LinkTxtRecord txt)
@@ -203,7 +294,8 @@ public sealed class LinkHubBrowser : IDisposable
     // ── Typed addresses ──
 
     /// <summary>The addresses the user added (Settings › Networking). Each is
-    /// probed for its hub id; one that doesn't answer is retried now and then.</summary>
+    /// probed for its hub id; one that doesn't answer, or answers with no
+    /// devices, is asked again now and then.</summary>
     public void SetManual(IEnumerable<string> addresses)
     {
         lock (_lock)
@@ -223,7 +315,9 @@ public sealed class LinkHubBrowser : IDisposable
         lock (_lock)
         {
             if (_disposed) return;
-            addresses = _manual.Where(p => !onlyMissing || p.Value == null).Select(p => p.Key).ToList();
+            // A hub with no devices yet may gain one; one with a device is
+            // left alone (its sessions say when that changes).
+            addresses = _manual.Where(p => !onlyMissing || p.Value == null || p.Value.Serials.Count == 0).Select(p => p.Key).ToList();
         }
         var probes = addresses.Select(async address => (address, record: await ProbeAsync(address).ConfigureAwait(false)));
         var results = await Task.WhenAll(probes).ConfigureAwait(false);
@@ -234,12 +328,18 @@ public sealed class LinkHubBrowser : IDisposable
             {
                 if (!_manual.ContainsKey(address)) continue;
                 if (record == null && onlyMissing) continue;
-                if (_manual[address] != record) changed = true;
+                // Records compare their lists by reference: compare what shows.
+                if (!SameListing(_manual[address], record)) changed = true;
                 _manual[address] = record;
             }
         }
         if (changed) Publish();
     }
+
+    private static bool SameListing(LinkHubRecord? a, LinkHubRecord? b) =>
+        a == null || b == null
+            ? a == b
+            : a with { Serials = Array.Empty<string>() } == b with { Serials = Array.Empty<string>() } && a.Serials.SequenceEqual(b.Serials);
 
     /// <summary>What a typed address leads to: the hub's own description, or
     /// null when nothing answers. Also used to check an address before adding it.</summary>
@@ -326,6 +426,7 @@ public sealed class LinkHubBrowser : IDisposable
             _enabled = false;
         }
         _manualRetry?.Dispose();
+        _emptyRefresh?.Dispose();
         _dns.Dispose();
     }
 }
