@@ -32,6 +32,9 @@ public sealed class LinkHubBrowser : IDisposable
     private readonly Dictionary<string, DateTime> _lastResolve = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Instances with a re-resolve booked for the end of the interval.</summary>
     private readonly HashSet<string> _resolveBooked = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Instances whose devices came from their info page, not their
+    /// TXT record.</summary>
+    private readonly HashSet<string> _fromInfo = new(StringComparer.OrdinalIgnoreCase);
     private bool _enabled;
     private bool _disposed;
     private Timer? _manualRetry;
@@ -76,6 +79,7 @@ public sealed class LinkHubBrowser : IDisposable
                 _lastResolve.Remove(instance);
                 _discovered.Remove(instance);
                 _resolved.Remove(instance);
+                _fromInfo.Remove(instance);
             }
             Publish();
         };
@@ -155,6 +159,7 @@ public sealed class LinkHubBrowser : IDisposable
                     _resolved.Clear();
                     _present.Clear();
                     _lastResolve.Clear();
+                    _fromInfo.Clear();
                 }
                 else
                 {
@@ -190,14 +195,25 @@ public sealed class LinkHubBrowser : IDisposable
             await ResolveAsync(instance, attempt + 1).ConfigureAwait(false);
             return;
         }
+        bool changed;
         lock (_lock)
         {
             // Said goodbye while this was resolving: stay gone.
             if (!_enabled || !_present.Contains(instance)) return;
             _resolved[instance] = service;
-            _discovered[instance] = Record(instance, service, txt);
+            var record = Record(instance, service, txt);
+            // Devices the info page listed outlast a record that still lists
+            // none (Windows may hold the old one); the info page is asked
+            // again and has the last word.
+            if (txt.Serials is { Count: > 0 }) _fromInfo.Remove(instance);
+            else if (_fromInfo.Contains(instance) && _discovered.TryGetValue(instance, out var known) && known.Serials.Count > 0)
+                record = record with { DeviceCount = known.DeviceCount, Serials = known.Serials };
+            // Windows passes on answers to its own repeated queries as
+            // announcements: most re-resolves find nothing new to report.
+            changed = !_discovered.TryGetValue(instance, out var old) || !SameListing(old, record);
+            _discovered[instance] = record;
         }
-        Publish();
+        if (changed) Publish();
     }
 
     /// <summary>
@@ -216,7 +232,7 @@ public sealed class LinkHubBrowser : IDisposable
             lock (_lock)
             {
                 if (!_enabled || _disposed) return;
-                empty = _discovered.Where(p => p.Value.Serials.Count == 0).Select(p => (p.Key, p.Value)).ToList();
+                empty = _discovered.Where(p => p.Value.Serials.Count == 0 || _fromInfo.Contains(p.Key)).Select(p => (p.Key, p.Value)).ToList();
             }
             foreach (var (instance, hub) in empty)
             {
@@ -226,15 +242,24 @@ public sealed class LinkHubBrowser : IDisposable
                     try { info = await _probe(hub.Endpoint, cts.Token).ConfigureAwait(false); }
                     catch (Exception) { continue; }
                 }
-                if (info?.Devices is not { Count: > 0 } devices
-                    || !string.Equals(info.Hub.Id, hub.Id, StringComparison.OrdinalIgnoreCase)) continue;
+                if (info == null || !string.Equals(info.Hub.Id, hub.Id, StringComparison.OrdinalIgnoreCase)) continue;
+                var serials = (info.Devices ?? Array.Empty<LinkInfoDevice>()).Select(d => d.Serial).ToArray();
+                bool changed;
                 lock (_lock)
                 {
-                    // Gone, or a newer record already lists devices.
-                    if (!_discovered.TryGetValue(instance, out var current) || current.Serials.Count > 0) continue;
-                    _discovered[instance] = current with { DeviceCount = devices.Count, Serials = devices.Select(d => d.Serial).ToArray() };
+                    if (!_discovered.TryGetValue(instance, out var current)) continue;
+                    // A newer TXT record listing devices has the last word.
+                    if (current.Serials.Count > 0 && !_fromInfo.Contains(instance)) continue;
+                    if (serials.Length > 0) _fromInfo.Add(instance);
+                    else _fromInfo.Remove(instance);
+                    var updated = current with { DeviceCount = serials.Length, Serials = serials };
+                    changed = !SameListing(current, updated);
+                    _discovered[instance] = updated;
                 }
-                LinkLog.Write($"hubs: {hub.Name} lists {devices.Count} device(s) on its info page; its announcement did not");
+                if (!changed) continue;
+                LinkLog.Write(serials.Length > 0
+                    ? $"hubs: {hub.Name} lists {serials.Length} device(s) on its info page; its announcement did not"
+                    : $"hubs: {hub.Name} no longer lists a device on its info page");
                 Publish();
             }
         }

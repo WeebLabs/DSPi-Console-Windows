@@ -245,6 +245,15 @@ public partial class MainViewModel
         DeviceNamesChanged?.Invoke();
     }
 
+    /// <summary>The device's name without the hub it is reached through: the
+    /// heading of the picker's submenu for a device on several hubs.</summary>
+    public string DeviceNameOnly(DSPiDeviceInfo device)
+    {
+        if (_knownDeviceNames.TryGetValue(device.Serial, out var name) && name.Length > 0) return name;
+        if (!string.IsNullOrWhiteSpace(device.RemoteName)) return device.RemoteName;
+        return device.Serial.Length >= 8 ? $"DSPi ({device.Serial[^8..]})" : "DSPi";
+    }
+
     /// <summary>Picker title: the board's own name once known, otherwise the
     /// serial-based default.</summary>
     public string DeviceTitle(DSPiDeviceInfo device)

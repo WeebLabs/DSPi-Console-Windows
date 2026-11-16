@@ -224,10 +224,37 @@ public class LinkHubBrowserTests
         await Until(() => browser.Hubs.Count == 1 && browser.Hubs[0].Serials.Count == 1);
         Assert.Equal(["E46058388B1A2E2C"], browser.Hubs[0].Serials);
         Assert.Equal(1, browser.Hubs[0].DeviceCount);
-        // Listing a device now, it isn't asked again.
-        var asked = Volatile.Read(ref probes);
-        await Task.Delay(350);
-        Assert.Equal(asked, Volatile.Read(ref probes));
+    }
+
+    /// <summary>Windows may keep answering with the record that lists no
+    /// device: the info page's device stays until the info page drops it.</summary>
+    [Fact]
+    public async Task ADeviceFromTheInfoPageOutlastsAStaleRecord()
+    {
+        var dns = new FakeDns();
+        dns.Services["Bridge._dspi._tcp.local"] = Service("Bridge._dspi._tcp.local", MacHid, "pin");
+        var serials = new[] { "E46058388B1A2E2C" };
+        var changes = 0;
+        using var browser = new LinkHubBrowser(dns, (_, _) => Task.FromResult<LinkInfo?>(BridgeInfo(MacHid, Volatile.Read(ref serials))))
+            { EmptyHubRefreshInterval = TimeSpan.FromMilliseconds(100), ReresolveInterval = TimeSpan.FromMilliseconds(50), Enabled = true };
+        dns.Announce("Bridge._dspi._tcp.local");
+        await Until(() => browser.Hubs.Count == 1 && browser.Hubs[0].Serials.Count == 1);
+        browser.HubsChanged += (_, _) => Interlocked.Increment(ref changes);
+
+        // The stale record comes back again and again; the device stays, and
+        // nothing is republished.
+        for (int i = 0; i < 4; i++)
+        {
+            await Task.Delay(80);
+            dns.Announce("Bridge._dspi._tcp.local");
+        }
+        await Task.Delay(250);
+        Assert.Equal(["E46058388B1A2E2C"], browser.Hubs[0].Serials);
+        Assert.Equal(0, Volatile.Read(ref changes));
+
+        // The info page no longer lists it: gone.
+        Volatile.Write(ref serials, []);
+        await Until(() => browser.Hubs[0].Serials.Count == 0);
     }
 
     [Fact]

@@ -3415,40 +3415,61 @@ public sealed partial class MainWindow : Window
 
         foreach (var d in devices)
         {
-            var device = d;
-            var item = new MenuFlyoutItem { Text = ViewModel.DeviceTitle(device) };
-            if (current != null && device.Serial == current.Serial)
-                item.Icon = new FontIcon { Glyph = "\uE73E" };
-            item.Click += async (s, args) =>
+            // One board reachable through several hubs (a computer's USB and a
+            // bridge's UART): a submenu picks the hub to drive it through.
+            var routes = Services.LinkNetwork.Shared.Transport.RoutesFor(d.Serial);
+            if (routes.Count > 1)
             {
-                // The current device again is a retry when it isn't connected.
-                if (current != null && device.Serial == current.Serial && ViewModel.IsDeviceConnected) return;
-
-                // Staged Settings changes describe the current device; applying
-                // them after a switch would write them to the wrong board.
-                var tracker = _settingsWindow?.Tracker;
-                if (ViewModel.IsDeviceConnected && tracker != null && tracker.Count > 0)
+                var sub = new MenuFlyoutSubItem { Text = ViewModel.DeviceNameOnly(d) };
+                if (current != null && d.Serial == current.Serial)
+                    sub.Icon = new FontIcon { Glyph = "\uE73E" };
+                foreach (var route in routes)
                 {
-                    var confirm = new ContentDialog
-                    {
-                        Title = "Unsaved Settings Changes",
-                        Content = "Settings has pending changes for the current device that have not been saved. " +
-                                  "Switching devices will discard them.",
-                        PrimaryButtonText = "Discard and Switch",
-                        CloseButtonText = "Cancel",
-                        DefaultButton = ContentDialogButton.Close,
-                        XamlRoot = Content.XamlRoot
-                    };
-                    if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
-                    tracker.DiscardAll();
+                    var choice = new MenuFlyoutItem { Text = $"via {route.HubName ?? "a hub"}" };
+                    if (current != null && route.Serial == current.Serial && route.HubId == current.HubId)
+                        choice.Icon = new FontIcon { Glyph = "\uE73E" };
+                    choice.Click += (_, _) => ChooseDevice(route);
+                    sub.Items.Add(choice);
                 }
-
-                ViewModel.SwitchToDeviceCommand.Execute(device);
-            };
+                flyout.Items.Add(sub);
+                continue;
+            }
+            var item = new MenuFlyoutItem { Text = ViewModel.DeviceTitle(d) };
+            if (current != null && d.Serial == current.Serial)
+                item.Icon = new FontIcon { Glyph = "\uE73E" };
+            item.Click += (_, _) => ChooseDevice(d);
             flyout.Items.Add(item);
         }
 
         flyout.ShowAt(DeviceSelectorBtn);
+
+        async void ChooseDevice(DSPiDeviceInfo device)
+        {
+            // The current device again (by the same hub) is a retry when it
+            // isn't connected.
+            if (current != null && device.Serial == current.Serial && device.HubId == current.HubId && ViewModel.IsDeviceConnected) return;
+
+            // Staged Settings changes describe the current device; applying
+            // them after a switch would write them to the wrong board.
+            var tracker = _settingsWindow?.Tracker;
+            if (ViewModel.IsDeviceConnected && tracker != null && tracker.Count > 0)
+            {
+                var confirm = new ContentDialog
+                {
+                    Title = "Unsaved Settings Changes",
+                    Content = "Settings has pending changes for the current device that have not been saved. " +
+                              "Switching devices will discard them.",
+                    PrimaryButtonText = "Discard and Switch",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+                tracker.DiscardAll();
+            }
+
+            ViewModel.SwitchToDeviceCommand.Execute(device);
+        }
     }
 
 

@@ -197,6 +197,44 @@ public class CompositeTransportTests : IDisposable
         Assert.Equal(LocalBoard.Serial, rig.Composite.SelectedDevice?.Serial);
     }
 
+    /// <summary>One board on two hubs (a Mac's USB and a bridge's UART) is
+    /// listed once; both routes are offered, and the one chosen is the one
+    /// listed and driven.</summary>
+    [Fact]
+    public async Task OneBoardOnTwoHubsOffersBothRoutes()
+    {
+        const string BridgeId = "de9d702d-057a-4350-9457-46e85edd4088";
+        await using var rig = new Rig(_tokenPath);
+        var mac = Hub(LinkAuthMode.Pin, RemoteSerial);
+        var bridge = new LinkHubRecord(BridgeId, "DSPi Bridge 1B34", LinkHubKind.Bridge, LinkAuthMode.Pin, 1, [RemoteSerial], new LinkEndpoint("dspi-bridge-1b34.local"));
+        rig.Composite.UpdateHubs([mac, bridge]);
+
+        var listed = Assert.Single(rig.Composite.AvailableDevices);
+        Assert.Equal(HubId, listed.HubId);
+        var routes = rig.Composite.RoutesFor(RemoteSerial);
+        Assert.Equal([HubId, BridgeId], routes.Select(r => r.HubId));
+        Assert.Equal("DSPi Bridge 1B34", routes[1].HubName);
+
+        rig.Composite.SelectDevice(routes[1]);
+        Assert.True(rig.Composite.IsRemoteActive);
+        Assert.Equal(BridgeId, rig.Composite.SelectedDevice?.HubId);
+        await Until(() => rig.Composite.AvailableDevices.Single().HubId == BridgeId);
+        Assert.Equal(2, rig.Composite.RoutesFor(RemoteSerial).Count);
+    }
+
+    [Fact]
+    public async Task ABoardPluggedInHereHasNoOtherRoutes()
+    {
+        await using var rig = new Rig(_tokenPath);
+        var board = new DSPiDeviceInfo(RemoteSerial, "vid_2E8B&pid_FEAA#" + RemoteSerial);
+        rig.Local.List(board);
+        rig.Composite.UpdateHubs([Hub(LinkAuthMode.Pin, RemoteSerial)]);
+        Assert.Equal(DeviceLinkKind.Usb, Assert.Single(rig.Composite.AvailableDevices).Kind);
+        Assert.Empty(rig.Composite.RoutesFor(RemoteSerial));
+        // One hub alone is no choice either.
+        Assert.Empty(rig.Composite.RoutesFor("FFFFFFFFFFFFFFFF"));
+    }
+
     /// <summary>A user's remote choice stays when a board appears.</summary>
     [Fact]
     public async Task AChosenRemoteStaysWhenABoardAppears()

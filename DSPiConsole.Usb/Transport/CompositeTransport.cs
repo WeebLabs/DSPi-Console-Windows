@@ -38,6 +38,7 @@ public sealed class CompositeTransport : IDspTransport
     private IReadOnlyList<LinkHubRecord> _hubs = Array.Empty<LinkHubRecord>();
     private IDspTransport _active;
     private IReadOnlyList<DSPiDeviceInfo> _devices = Array.Empty<DSPiDeviceInfo>();
+    private IReadOnlyDictionary<string, IReadOnlyList<DSPiDeviceInfo>> _routes = new Dictionary<string, IReadOnlyList<DSPiDeviceInfo>>();
     private bool _connected;
     private ulong _generation;
     private IDspTransport? _lockedTransport;
@@ -184,10 +185,17 @@ public sealed class CompositeTransport : IDspTransport
         lock (_lock)
         {
             merged = _local.AvailableDevices.ToList();
-            var seen = merged.Select(d => d.Serial).ToHashSet();
+            var local = merged.Select(d => d.Serial).ToHashSet();
+            var seen = new HashSet<string>(local);
+            // Every hub a remote device can be reached through, in list order.
+            // A board plugged in here has no other routes worth offering.
+            var routes = new Dictionary<string, List<DSPiDeviceInfo>>();
             void Add(DSPiDeviceInfo d)
             {
                 if (seen.Add(d.Serial)) merged.Add(d);
+                if (d.Kind != DeviceLinkKind.Remote || local.Contains(d.Serial)) return;
+                if (!routes.TryGetValue(d.Serial, out var list)) routes[d.Serial] = list = new();
+                if (!list.Any(r => r.HubId == d.HubId)) list.Add(d);
             }
 
             var listed = new HashSet<string>();
@@ -216,11 +224,21 @@ public sealed class CompositeTransport : IDspTransport
                 if (!listed.Contains(id))
                     foreach (var d in t.AvailableDevices) Add(d);
             // The device being driven stays listed while its hub is unreachable.
-            if (_active != _local && _active.SelectedDevice is { } selected) Add(selected);
+            if (_active != _local && _active.SelectedDevice is { } selected)
+            {
+                Add(selected);
+                // One device on several hubs is listed once, by the route in
+                // use, so the picker shows the hub actually being driven.
+                int at = merged.FindIndex(d => d.Serial == selected.Serial);
+                if (at >= 0 && merged[at].Kind == DeviceLinkKind.Remote
+                    && routes.GetValueOrDefault(selected.Serial)?.FirstOrDefault(r => r.HubId == selected.HubId) is { } inUse)
+                    merged[at] = inUse;
+            }
 
             // The view model rebuilds the picker on every change: only a real one.
             changed = !_devices.SequenceEqual(merged);
             _devices = merged;
+            _routes = routes.ToDictionary(p => p.Key, p => (IReadOnlyList<DSPiDeviceInfo>)p.Value.ToArray());
             hubs = _hubs;
         }
         if (changed) AvailableDevicesChanged?.Invoke(this, EventArgs.Empty);
@@ -367,6 +385,19 @@ public sealed class CompositeTransport : IDspTransport
     public string? ErrorMessage => Active.ErrorMessage;
     public DSPiDeviceInfo? SelectedDevice => Active.SelectedDevice;
     public IReadOnlyList<DSPiDeviceInfo> AvailableDevices { get { lock (_lock) return _devices; } }
+
+    /// <summary>
+    /// The hubs a listed device can be reached through, one entry each, when
+    /// there is more than one (the same board on a computer's USB and a
+    /// bridge's UART, say); empty otherwise. <see cref="AvailableDevices"/>
+    /// lists such a device once (spec 3.1); the picker offers these as a
+    /// submenu, and selecting one drives the device through that hub.
+    /// </summary>
+    public IReadOnlyList<DSPiDeviceInfo> RoutesFor(string serial)
+    {
+        lock (_lock)
+            return _routes.TryGetValue(serial, out var list) && list.Count > 1 ? list : Array.Empty<DSPiDeviceInfo>();
+    }
 
     public event EventHandler<DSPiDeviceInfo>? Connected;
     public event EventHandler? Disconnected;
